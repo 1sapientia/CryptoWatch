@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	code.cryptowat.ch/clock v0.0.0-20190102160946-e933bd4e0935
+	github.com/aws/aws-sdk-go v1.25.2
 	github.com/cryptowatch/clock v0.0.0-20190102160946-e933bd4e0935
 	github.com/davecgh/go-spew v1.1.0
 	github.com/fatih/color v1.7.0
