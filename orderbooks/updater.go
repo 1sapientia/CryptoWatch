@@ -30,6 +30,7 @@ type OrderBookUpdater struct {
 	addUpdateCB           chan OnUpdateCB
 
 	curOrderBook *OrderBook
+	curOrderBookWriter *OrderBookWriter
 
 	updateCBs []OnUpdateCB
 
@@ -93,6 +94,8 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 		getSnapshotResultChan: make(chan getSnapshotResult, 1),
 		stopChan:              make(chan struct{}),
 		addUpdateCB:           make(chan OnUpdateCB, 1),
+
+		curOrderBookWriter: NewOrderBookWriter(),
 
 		cachedDeltas: map[common.SeqNum]common.OrderBookDelta{},
 		firstSyncing: true,
@@ -239,10 +242,11 @@ func (obu *OrderBookUpdater) receiveDeltaInternal(delta common.OrderBookDelta) {
 // receiveSnapshotInternal should only be called from the eventLoop.
 func (obu *OrderBookUpdater) receiveSnapshotInternal(snapshot common.OrderBookSnapshot) {
 	if obu.curOrderBook == nil {
-		obu.curOrderBook = NewOrderBook(snapshot)
-	} else {
-		obu.curOrderBook.ApplySnapshot(snapshot)
+		//init empty orderbook
+		obu.curOrderBook =  &OrderBook{}
 	}
+	//fill it with deltas from snapshot
+	obu.curOrderBook.ApplySnapshot(snapshot, obu.curOrderBookWriter)
 
 	obu.applyCachedDeltas()
 	// Note that we shouldn't request a new snapshot if isInSync is false; it could
@@ -282,7 +286,7 @@ func (obu *OrderBookUpdater) applyCachedDeltas() {
 			break
 		}
 
-		if err := obu.curOrderBook.ApplyDelta(obu.cachedDeltas[*dcr.nextDeltaApply]); err != nil {
+		if err := obu.curOrderBook.ApplyDelta(obu.cachedDeltas[*dcr.nextDeltaApply], obu.curOrderBookWriter); err != nil {
 			// Should never be here, because we check seq nums here before
 			// calling ApplyDelta.
 

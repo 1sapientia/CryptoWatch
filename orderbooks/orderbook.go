@@ -41,18 +41,20 @@ func (ob *OrderBook) GetSeqNum() common.SeqNum {
 // ApplyDelta applies the given delta (received from the wire) to the current
 // orderbook. If the sequence number isn't exactly the old one incremented by
 // 1, returns an error without applying delta.
-func (ob *OrderBook) ApplyDelta(obd common.OrderBookDelta) error {
-	return ob.ApplyDeltaOpt(obd, false)
+func (ob *OrderBook) ApplyDelta(obd common.OrderBookDelta, writer *OrderBookWriter) error {
+	return ob.ApplyDeltaOpt(obd, false, writer)
 }
 
 // ApplyDeltaOpt applies the given delta (received from the wire) to the
 // current orderbook. If ignoreSeqNum is true, applies the delta even if the
 // sequence number isn't exactly the old one incremented by 1.
-func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool) error {
+func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool, writer *OrderBookWriter) error {
 	// Refuse to apply delta of there is a gap in sequence numbers
 	if !ignoreSeqNum && obd.SeqNum-1 != ob.snapshot.SeqNum {
 		return ErrSeqNumMismatch
 	}
+
+	go writer.writeDelta(obd)
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
@@ -63,8 +65,13 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool)
 }
 
 // ApplySnapshot sets the internal orderbook to the provided snapshot.
-func (ob *OrderBook) ApplySnapshot(snapshot common.OrderBookSnapshot) {
-	ob.snapshot = snapshot
+func (ob *OrderBook) ApplySnapshot(snapshot common.OrderBookSnapshot, writer *OrderBookWriter) {
+
+	snapshotDeltas := snapshot.GetDeltasAgainst(ob.snapshot)
+	_ = ob.ApplyDeltaOpt(snapshotDeltas, true, writer)
+
+	//old code:
+	//ob.snapshot = snapshot
 }
 
 // ordersWithDelta applies given deltas to the slice of orders, and returns a
