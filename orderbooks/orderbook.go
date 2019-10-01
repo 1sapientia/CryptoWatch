@@ -54,7 +54,9 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
-	go writer.writeDelta(obd)
+	if writer != nil{
+		go writer.writeDelta(obd)
+	}
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)

@@ -67,7 +67,8 @@ func testOrderBook(t *testing.T) error {
 				common.PublicOrder{Price: "130", Amount: "10"},
 			},
 		},
-	})
+	},
+	nil)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -97,7 +98,8 @@ func testOrderBook(t *testing.T) error {
 	// Try to apply out-of-band delta: should result in an error
 	err = ob.ApplyDelta(common.OrderBookDelta{
 		SeqNum: 4,
-	})
+	},
+		nil)
 	if errors.Cause(err) != ErrSeqNumMismatch {
 		return errors.Errorf("expected ErrSeqNumMismatch, got %v", err)
 	}
@@ -110,7 +112,8 @@ func testOrderBook(t *testing.T) error {
 		Asks: []common.PublicOrder{
 			common.PublicOrder{Price: "110", Amount: "2"},
 		},
-	})
+	},
+		nil)
 
 	err = compareSnapshots(
 		common.OrderBookSnapshot{
