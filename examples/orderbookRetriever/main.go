@@ -51,17 +51,9 @@ func main() {
 
 	restclient := rest.NewCWRESTClient(nil)
 
-	// markets to subscribe to (TODO move to configuration file)
-	exchanePairs := map[string][]string{
-		//"bitfinex": {"btcusd", "ethbtc"},
-		"kraken":   { "ethbtc"},
-		"bitstamp": {"btcusd"},
-		//"binance":  {"btcusdt", "ethbtc"},
-	}
-
 	// Get market descriptions and match it with market IDs
 	markets := map[int]rest.MarketDescr{}
-	for exchange, pairs := range exchanePairs {
+	for exchange, pairs := range cfg.ExchangePairs {
 		for _, pair := range pairs {
 			market, err := restclient.GetMarketDescr(exchange, pair)
 			if err != nil {

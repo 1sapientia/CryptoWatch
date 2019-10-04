@@ -42,6 +42,7 @@ type CW struct {
 	StreamURL string     `yaml:"stream_url"`
 	TradeURL  string     `yaml:"trade_url"`
 	APIURL    string     `yaml:"api_url"`
+	ExchangePairs    map[string][]string     `yaml:"exchange_pairs"`
 }
 
 // New creates a new CW from a file by the given name.
