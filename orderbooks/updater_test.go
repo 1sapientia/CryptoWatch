@@ -197,7 +197,7 @@ func testUpdaterRegular(t *testing.T) (err error) {
 		return errors.Trace(err)
 	}
 
-	// Delta 104 (still in sync) {{{
+	// Item 104 (still in sync) {{{
 	updater.ReceiveDelta(common.OrderBookDelta{
 		SeqNum: 104,
 		Asks: common.OrderDeltas{
@@ -223,7 +223,7 @@ func testUpdaterRegular(t *testing.T) (err error) {
 	}
 	// }}}
 
-	// Delta 105 (still in sync) {{{
+	// Item 105 (still in sync) {{{
 	updater.ReceiveDelta(common.OrderBookDelta{
 		SeqNum: 105,
 		Asks: common.OrderDeltas{
@@ -270,7 +270,7 @@ func testUpdaterRegular(t *testing.T) (err error) {
 	}
 	// }}}
 
-	// Delta 107 (going out of sync) {{{
+	// Item 107 (going out of sync) {{{
 	updater.ReceiveDelta(common.OrderBookDelta{
 		SeqNum: 107,
 		Asks: common.OrderDeltas{
@@ -289,7 +289,7 @@ func testUpdaterRegular(t *testing.T) (err error) {
 	}
 	// }}}
 
-	// Delta 108 {{{
+	// Item 108 {{{
 	updater.ReceiveDelta(common.OrderBookDelta{
 		SeqNum: 108,
 		Asks: common.OrderDeltas{

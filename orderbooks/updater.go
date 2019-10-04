@@ -1,6 +1,7 @@
 package orderbooks
 
 import (
+	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"fmt"
 	"math/rand"
 	"time"
@@ -23,14 +24,15 @@ type getSnapshotResult struct {
 type OrderBookUpdater struct {
 	params OrderBookUpdaterParams
 
+	tradesChan            chan common.TradesUpdate
 	deltasChan            chan common.OrderBookDelta
 	snapshotsChan         chan common.OrderBookSnapshot
 	getSnapshotResultChan chan getSnapshotResult
 	stopChan              chan struct{}
 	addUpdateCB           chan OnUpdateCB
 
-	curOrderBook *OrderBook
-	curOrderBookWriter *OrderBookWriter
+	curOrderBook      *OrderBook
+	curDatabaseWriter *DatabaseWriter
 
 	updateCBs []OnUpdateCB
 
@@ -80,7 +82,9 @@ type OrderBookUpdaterParams struct {
 
 	// internalEvent is called right after processing an event in eventLoop.
 	// It's a no-op for prod.
-	internalEvent func(ie internalEvent)
+	internalEvent    func(ie internalEvent)
+
+	MarketDescriptor rest.MarketDescr
 }
 
 // NewOrderBookUpdater creates a new orderbook updater with the provided
@@ -90,12 +94,13 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 		params: *params,
 
 		deltasChan:            make(chan common.OrderBookDelta, 1),
+		tradesChan:            make(chan common.TradesUpdate, 1),
 		snapshotsChan:         make(chan common.OrderBookSnapshot, 1),
 		getSnapshotResultChan: make(chan getSnapshotResult, 1),
 		stopChan:              make(chan struct{}),
 		addUpdateCB:           make(chan OnUpdateCB, 1),
 
-		curOrderBookWriter: NewOrderBookWriter(),
+		curDatabaseWriter: NewDatabaseWriter(&params.MarketDescriptor),
 
 		cachedDeltas: map[common.SeqNum]common.OrderBookDelta{},
 		firstSyncing: true,
@@ -131,6 +136,12 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 // the OnUpdate callbacks will be called shortly.
 func (obu *OrderBookUpdater) ReceiveDelta(delta common.OrderBookDelta) {
 	obu.deltasChan <- delta
+}
+
+// ReceiveTrades should be called when a new trade is received from
+// the websocket.
+func (obu *OrderBookUpdater) ReceiveTrades(trades common.TradesUpdate) {
+	obu.tradesChan <- trades
 }
 
 // ReceiveSnapshot should be called when a new orderbook snapshot is received
@@ -239,14 +250,21 @@ func (obu *OrderBookUpdater) receiveDeltaInternal(delta common.OrderBookDelta) {
 	)
 }
 
-// receiveSnapshotInternal should only be called from the eventLoop.
+// receiveSnapshotInternal applies the snapshot by transforming it to deltas and applying them
+// If the orderbook is empty or if its time for new checkpoint we initialize a new orderbook and
+// save the checkpoint item prior to applying the full snapshot.
+// should only be called from the eventLoop.
 func (obu *OrderBookUpdater) receiveSnapshotInternal(snapshot common.OrderBookSnapshot) {
-	if obu.curOrderBook == nil {
+	if obu.curOrderBook == nil || obu.curOrderBook.IsTimeForCheckpoint(){
 		//init empty orderbook
-		obu.curOrderBook =  &OrderBook{}
+		obu.curOrderBook = &OrderBook{
+			marketDescriptor: obu.params.MarketDescriptor,
+			lastCheckpoint: time.Now(),
+		}
+		obu.curOrderBook.SetSnapshotCheckpoint(obu.curDatabaseWriter)
 	}
-	//fill it with deltas from snapshot
-	obu.curOrderBook.ApplySnapshot(snapshot, obu.curOrderBookWriter)
+	//apply the snapshot by transforming it to deltas which are in turn applied and saved to the db
+	obu.curOrderBook.ApplySnapshot(snapshot, obu.curDatabaseWriter)
 
 	obu.applyCachedDeltas()
 	// Note that we shouldn't request a new snapshot if isInSync is false; it could
@@ -286,7 +304,7 @@ func (obu *OrderBookUpdater) applyCachedDeltas() {
 			break
 		}
 
-		if err := obu.curOrderBook.ApplyDelta(obu.cachedDeltas[*dcr.nextDeltaApply], obu.curOrderBookWriter); err != nil {
+		if err := obu.curOrderBook.ApplyDelta(obu.cachedDeltas[*dcr.nextDeltaApply], obu.curDatabaseWriter); err != nil {
 			// Should never be here, because we check seq nums here before
 			// calling ApplyDelta.
 
@@ -389,6 +407,7 @@ const (
 	internalEventDeltaHandled internalEvent = iota
 	internalEventSnapshotHandled
 	internalEventGetSnapshotResultHandled
+	internalEventTradeHandled
 )
 
 func (obu *OrderBookUpdater) eventLoop() {
@@ -397,6 +416,10 @@ func (obu *OrderBookUpdater) eventLoop() {
 		case delta := <-obu.deltasChan:
 			obu.receiveDeltaInternal(delta)
 			obu.params.internalEvent(internalEventDeltaHandled)
+
+		case trades := <-obu.tradesChan:
+			obu.curDatabaseWriter.writeTrades(trades)
+			obu.params.internalEvent(internalEventTradeHandled)
 
 		case shapshot := <-obu.snapshotsChan:
 			obu.receiveSnapshotInternal(shapshot)

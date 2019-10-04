@@ -1,11 +1,11 @@
 package orderbooks
 
 import (
-	"sort"
-
-	"github.com/juju/errors"
-
+	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/common"
+	"github.com/juju/errors"
+	"sort"
+	"time"
 )
 
 var (
@@ -19,7 +19,9 @@ var (
 // It is not thread-safe; so if you need to use it from more than one
 // goroutine, apply your own synchronization.
 type OrderBook struct {
-	snapshot common.OrderBookSnapshot
+	snapshot         common.OrderBookSnapshot
+	marketDescriptor rest.MarketDescr
+	lastCheckpoint   time.Time
 }
 
 func NewOrderBook(snapshot common.OrderBookSnapshot) *OrderBook {
@@ -41,21 +43,21 @@ func (ob *OrderBook) GetSeqNum() common.SeqNum {
 // ApplyDelta applies the given delta (received from the wire) to the current
 // orderbook. If the sequence number isn't exactly the old one incremented by
 // 1, returns an error without applying delta.
-func (ob *OrderBook) ApplyDelta(obd common.OrderBookDelta, writer *OrderBookWriter) error {
+func (ob *OrderBook) ApplyDelta(obd common.OrderBookDelta, writer *DatabaseWriter) error {
 	return ob.ApplyDeltaOpt(obd, false, writer)
 }
 
 // ApplyDeltaOpt applies the given delta (received from the wire) to the
 // current orderbook. If ignoreSeqNum is true, applies the delta even if the
 // sequence number isn't exactly the old one incremented by 1.
-func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool, writer *OrderBookWriter) error {
+func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool, writer *DatabaseWriter) error {
 	// Refuse to apply delta of there is a gap in sequence numbers
 	if !ignoreSeqNum && obd.SeqNum-1 != ob.snapshot.SeqNum {
 		return ErrSeqNumMismatch
 	}
 
-	if writer != nil{
-		go writer.writeDelta(obd)
+	if writer != nil {
+		writer.writeDelta(obd)
 	}
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
@@ -67,13 +69,25 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 }
 
 // ApplySnapshot sets the internal orderbook to the provided snapshot.
-func (ob *OrderBook) ApplySnapshot(snapshot common.OrderBookSnapshot, writer *OrderBookWriter) {
+func (ob *OrderBook) ApplySnapshot(snapshot common.OrderBookSnapshot, writer *DatabaseWriter) {
 
 	snapshotDeltas := snapshot.GetDeltasAgainst(ob.snapshot)
 	_ = ob.ApplyDeltaOpt(snapshotDeltas, true, writer)
 
 	//old code:
 	//ob.snapshot = snapshot
+}
+
+// SetSnapshotCheckpoint writes the checkpoint item to the database if the writer is not nil
+func (ob *OrderBook) SetSnapshotCheckpoint(writer *DatabaseWriter) {
+	if writer != nil {
+		writer.writeCheckpoint()
+	}
+}
+
+// IsTimeForCheckpoint checks if we need a new snapshot checkpoint
+func (ob *OrderBook) IsTimeForCheckpoint() bool {
+	return ob.lastCheckpoint.Hour() != time.Now().Hour()
 }
 
 // ordersWithDelta applies given deltas to the slice of orders, and returns a

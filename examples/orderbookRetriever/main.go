@@ -1,27 +1,26 @@
 package main
 
 import (
-	"fmt"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/client/websocket"
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"code.cryptowat.ch/cw-sdk-go/config"
 	"code.cryptowat.ch/cw-sdk-go/orderbooks"
-
+	"fmt"
 	flag "github.com/spf13/pflag"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 const (
-	defaultExchange = "kraken"
-	defaultPair     = "btceur"
+	defaultExchange = "bitfinex"
+	defaultPair     = "btcusd"
 )
 
 func main() {
+
 	// We need this since getting user's home dir can fail.
 	defaultConfig, err := config.DefaultFilepath()
 	if err != nil {
@@ -32,15 +31,10 @@ func main() {
 	var (
 		configFile string
 		verbose    bool
-		exchange   string
-		pair       string
 	)
 
 	flag.StringVarP(&configFile, "config", "c", defaultConfig, "Configuration file")
 	flag.BoolVarP(&verbose, "verbose", "v", false, "Prints all debug messages to stdout")
-
-	flag.StringVarP(&exchange, "exchange", "e", defaultExchange, "")
-	flag.StringVarP(&pair, "pair", "p", defaultPair, "")
 
 	flag.Parse()
 
@@ -57,49 +51,68 @@ func main() {
 
 	restclient := rest.NewCWRESTClient(nil)
 
-	// Get market description, in particular we'll need the ID to use it
-	// in the stream subscription.
-	market, err := restclient.GetMarketDescr(exchange, pair)
-	if err != nil {
-		log.Printf("failed to get market %s/%s: %s", exchange, pair, err)
-		os.Exit(1)
+	// markets to subscribe to (TODO move to configuration file)
+	exchanePairs := map[string][]string{
+		//"bitfinex": {"btcusd", "ethbtc"},
+		"kraken":   { "ethbtc"},
+		"bitstamp": {"btcusd"},
+		//"binance":  {"btcusdt", "ethbtc"},
 	}
 
-	// Create a new stream connection instance. Note that this does not yet
-	// initiate the actual connection.
-	c, err := websocket.NewStreamClient(&websocket.StreamClientParams{
-		WSParams: &websocket.WSParams{
-			URL:       cfg.StreamURL,
-			APIKey:    cfg.APIKey,
-			SecretKey: cfg.SecretKey,
-		},
+	// Get market descriptions and match it with market IDs
+	markets := map[int]rest.MarketDescr{}
+	for exchange, pairs := range exchanePairs {
+		for _, pair := range pairs {
+			market, err := restclient.GetMarketDescr(exchange, pair)
+			if err != nil {
+				log.Printf("failed to get market %s/%s: %s", exchange, pair, err)
+				os.Exit(1)
+			}
+			fmt.Println(exchange, pair, market)
+			markets[market.ID] = market
+		}
+	}
 
-		Subscriptions: []*websocket.StreamSubscription{
+	subscriptions := []*websocket.StreamSubscription{}
+	orderbookUpdaters := map[int64]*orderbooks.OrderBookUpdater{}
+
+	// generate subscriptions and orderBookUpdaters for every market
+	for _, market := range markets {
+		subscriptions = append(subscriptions,
 			&websocket.StreamSubscription{
 				Resource: fmt.Sprintf("markets:%d:book:deltas", market.ID),
 			},
 			&websocket.StreamSubscription{
 				Resource: fmt.Sprintf("markets:%d:book:snapshots", market.ID),
 			},
+			&websocket.StreamSubscription{
+				Resource: fmt.Sprintf("markets:%d:trades", market.ID),
+			}, )
+
+		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
+			MarketDescriptor: market,
+			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
+				market.Exchange, market.Pair, &rest.CWRESTClientParams{
+					APIURL: cfg.APIURL,
+				},
+			),
+		})
+		orderbookUpdaters[int64(market.ID)] = orderbookUpdater
+	}
+
+	// Create a new stream connection instance
+	c, err := websocket.NewStreamClient(&websocket.StreamClientParams{
+		WSParams: &websocket.WSParams{
+			URL:       cfg.StreamURL,
+			APIKey:    cfg.APIKey,
+			SecretKey: cfg.SecretKey,
 		},
+		Subscriptions: subscriptions,
 	})
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
-
-	// Create orderbook updater: it handles all snapshots and deltas correctly,
-	// keeping track of sequence numbers, fetching snapshots from the REST API
-	// when appropriate and replaying cached deltas on them, etc. We'll only
-	// need to feed it with snapshots and deltas we receive from the wire, and
-	// subscribe on orderbook updates using OnOrderBookUpdate.
-	orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
-		SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
-			exchange, pair, &rest.CWRESTClientParams{
-				APIURL: cfg.APIURL,
-			},
-		),
-	})
 
 	// Ask for the state transition updates and print them.
 	c.OnStateChange(
@@ -116,28 +129,17 @@ func main() {
 	// Listen for market changes.
 	c.OnMarketUpdate(
 		func(market common.Market, md common.MarketUpdate) {
+			marketID, _ := market.ID.Int64()
+			//fmt.Println(market)
 			if snapshot := md.OrderBookSnapshot; snapshot != nil {
-				orderbookUpdater.ReceiveSnapshot(*snapshot)
+				orderbookUpdaters[marketID].ReceiveSnapshot(*snapshot)
 			} else if delta := md.OrderBookDelta; delta != nil {
-				// First, pretty-print the delta object.
-				//log.Println(PrettyDeltaUpdate{*delta}.String())
-
-				orderbookUpdater.ReceiveDelta(*delta)
+				orderbookUpdaters[marketID].ReceiveDelta(*delta)
+			} else if trades := md.TradesUpdate; trades != nil {
+				orderbookUpdaters[marketID].ReceiveTrades(*trades)
 			}
 		},
 	)
-
-	orderbookUpdater.OnUpdate(func(update orderbooks.Update) {
-		if ob := update.OrderBookUpdate; ob != nil {
-			//log.Println("Updated orderbook:")
-			//orderbook := NewOrderBookMirror(*ob)
-			//log.Println(orderbook.PrettyString())
-		} else if state := update.StateUpdate; state != nil {
-			//log.Printf("Updated state: %+v\n", state)
-		} else if err := update.GetSnapshotError; err != nil {
-			//log.Println("Error", err)
-		}
-	})
 
 	// Finally, connect.
 	if err := c.Connect(); err != nil {

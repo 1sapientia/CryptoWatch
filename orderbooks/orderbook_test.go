@@ -68,7 +68,7 @@ func testOrderBook(t *testing.T) error {
 			},
 		},
 	},
-	nil)
+		nil)
 	if err != nil {
 		return errors.Trace(err)
 	}
