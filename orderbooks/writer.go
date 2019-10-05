@@ -97,11 +97,13 @@ func (dbw *DatabaseWriter) exponentialBackoff(batch *dynamodb.BatchWriteItemInpu
 				log.Print("batch send fully throttled with error. retry pending", err)
 			} else {
 				log.Print("batch send failed", err)
-				break
+				return
 			}
-		}
-		if output.UnprocessedItems != nil && len(output.UnprocessedItems) != 0 {
+		} else if len(output.UnprocessedItems) != 0 {
+			log.Print("batch send partially throttled")
 			batch.RequestItems = output.UnprocessedItems
+		}  else{
+			return
 		}
 		delay := math.Pow(2.0, float64(i))
 		log.Print("retrying in", delay, "seconds, remaining items:", len(batch.RequestItems[tableName]))
