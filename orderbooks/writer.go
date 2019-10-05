@@ -3,15 +3,16 @@ package orderbooks
 import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/common"
+	"fmt"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"log"
 	"math"
+	"os"
 	"strconv"
 	"time"
-	"fmt"
-	"os"
 )
 
 type Item struct {
@@ -81,23 +82,29 @@ func (dbw *DatabaseWriter) write(requestItems []*dynamodb.WriteRequest, tableNam
 		batch := &dynamodb.BatchWriteItemInput{
 			RequestItems: map[string][]*dynamodb.WriteRequest{tableName: requestItems[i:end]},
 		}
-		dbw.exponentialBackoff(batch, 5)
+		dbw.exponentialBackoff(batch, 5, tableName)
 	}
 }
 
 // exponentialBackoff dispatches the request batch with retries
-func (dbw *DatabaseWriter) exponentialBackoff(batch *dynamodb.BatchWriteItemInput, numOfRetries int) {
+// The AWS SDKs for DynamoDB automatically retries throttled requests unless the request queue is full
+// (check ErrCodeProvisionedThroughputExceededException)
+func (dbw *DatabaseWriter) exponentialBackoff(batch *dynamodb.BatchWriteItemInput, numOfRetries int, tableName string) {
 	for i := 0; i < numOfRetries; i++ {
 		output, err := dbw.Client.BatchWriteItem(batch)
-		if err != nil && err.Error() != dynamodb.ErrCodeProvisionedThroughputExceededException {
-			log.Print("batch send failed", dbw.MarketDescriptor, err)
-			break
+		if err != nil{
+			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == dynamodb.ErrCodeProvisionedThroughputExceededException{
+				log.Print("batch send fully throttled with error. retry pending", err)
+			} else {
+				log.Print("batch send failed", err)
+				break
+			}
 		}
-		batch.RequestItems = output.UnprocessedItems
-		if len(batch.RequestItems) == 0 {
-			break
+		if output.UnprocessedItems != nil && len(output.UnprocessedItems) != 0 {
+			batch.RequestItems = output.UnprocessedItems
 		}
 		delay := math.Pow(2.0, float64(i))
+		log.Print("retrying in", delay, "seconds, remaining items:", len(batch.RequestItems[tableName]))
 		time.Sleep(time.Duration(delay) * time.Second)
 	}
 }
