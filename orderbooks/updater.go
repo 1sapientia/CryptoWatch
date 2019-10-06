@@ -82,7 +82,7 @@ type OrderBookUpdaterParams struct {
 
 	// internalEvent is called right after processing an event in eventLoop.
 	// It's a no-op for prod.
-	internalEvent    func(ie internalEvent)
+	internalEvent func(ie internalEvent)
 
 	MarketDescriptor rest.MarketDescr
 }
@@ -255,11 +255,11 @@ func (obu *OrderBookUpdater) receiveDeltaInternal(delta common.OrderBookDelta) {
 // save the checkpoint item prior to applying the full snapshot.
 // should only be called from the eventLoop.
 func (obu *OrderBookUpdater) receiveSnapshotInternal(snapshot common.OrderBookSnapshot) {
-	if obu.curOrderBook == nil || obu.curOrderBook.IsTimeForCheckpoint(){
+	if obu.curOrderBook == nil || obu.curOrderBook.IsTimeForCheckpoint() {
 		//init empty orderbook
 		obu.curOrderBook = &OrderBook{
 			marketDescriptor: obu.params.MarketDescriptor,
-			lastCheckpoint: time.Now(),
+			lastCheckpoint:   time.Now(),
 		}
 		obu.curOrderBook.SetSnapshotCheckpoint(obu.curDatabaseWriter)
 	}

@@ -36,13 +36,13 @@ var (
 
 // CW holds the configuration.
 type CW struct {
-	mu        sync.Mutex `yaml:"-"` // protects the fields below
-	APIKey    string     `yaml:"api_key"`
-	SecretKey string     `yaml:"secret_key"`
-	StreamURL string     `yaml:"stream_url"`
-	TradeURL  string     `yaml:"trade_url"`
-	APIURL    string     `yaml:"api_url"`
-	ExchangePairs    map[string][]string     `yaml:"exchange_pairs"`
+	mu            sync.Mutex          `yaml:"-"` // protects the fields below
+	APIKey        string              `yaml:"api_key"`
+	SecretKey     string              `yaml:"secret_key"`
+	StreamURL     string              `yaml:"stream_url"`
+	TradeURL      string              `yaml:"trade_url"`
+	APIURL        string              `yaml:"api_url"`
+	ExchangePairs map[string][]string `yaml:"exchange_pairs"`
 }
 
 // New creates a new CW from a file by the given name.

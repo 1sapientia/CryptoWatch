@@ -79,7 +79,7 @@ func main() {
 			},
 			&websocket.StreamSubscription{
 				Resource: fmt.Sprintf("markets:%d:trades", market.ID),
-			}, )
+			})
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
 			MarketDescriptor: market,
