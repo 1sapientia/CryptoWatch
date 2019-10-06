@@ -26,6 +26,8 @@ type DatabaseWriter struct {
 	Session          *session.Session
 	Client           *dynamodb.DynamoDB
 	MarketDescriptor *rest.MarketDescr
+	deltasWriteChan  chan []*dynamodb.WriteRequest
+	tradesWriteChan  chan []*dynamodb.WriteRequest
 }
 
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr) *DatabaseWriter {
@@ -37,10 +39,29 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr) *DatabaseWriter {
 	}))
 	// Create DynamoDB client
 	cli := dynamodb.New(sess)
-	return &DatabaseWriter{
+	dbw := &DatabaseWriter{
 		Session:          sess,
 		Client:           cli,
 		MarketDescriptor: marketDescriptor,
+		deltasWriteChan:  make(chan []*dynamodb.WriteRequest, 1000000),
+		tradesWriteChan:  make(chan []*dynamodb.WriteRequest, 1000000),
+	}
+	go dbw.writer(dbw.deltasWriteChan, "orderbooks")
+	go dbw.writer(dbw.tradesWriteChan, "trades")
+
+	return dbw
+}
+
+// writer collects the requests from the writeChannel and writes in batches
+func (dbw *DatabaseWriter) writer(writeChannel chan []*dynamodb.WriteRequest, tableName string) {
+	writeRequestQueue := []*dynamodb.WriteRequest{}
+	for writeRequests := range writeChannel {
+		writeRequestQueue = append(writeRequestQueue, writeRequests...)
+		// if statement below maximizes the number of full chunks of 25
+		if len(writeRequestQueue)%25 == 0 ||  len(writeRequestQueue) > 25*10 {
+			dbw.write(writeRequestQueue, tableName)
+			writeRequestQueue = nil
+		}
 	}
 }
 
@@ -53,22 +74,22 @@ func (dbw *DatabaseWriter) writeCheckpoint() {
 		P: 0, // price zero indicates the checkpoint
 	}}
 	requestItems := generateRequestItems(items)
-	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now().Minute())
-	go dbw.write(requestItems, "orderbooks")
+	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now())
+	dbw.deltasWriteChan <- requestItems
 }
 
 // writeDelta serializes the OrderBookDelta update and concurrently writes it to the orderbooks table
 func (dbw *DatabaseWriter) writeDelta(obd common.OrderBookDelta) {
 	items := dbw.extractDeltas(obd)
 	requestItems := generateRequestItems(items)
-	go dbw.write(requestItems, "orderbooks")
+	dbw.deltasWriteChan <- requestItems
 }
 
 // writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades table
 func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 	items := dbw.extractTrades(tu)
 	requestItems := generateRequestItems(items)
-	go dbw.write(requestItems, "trades")
+	dbw.tradesWriteChan <- requestItems
 }
 
 // write splits the request items to batches and dispatches them
@@ -92,8 +113,8 @@ func (dbw *DatabaseWriter) write(requestItems []*dynamodb.WriteRequest, tableNam
 func (dbw *DatabaseWriter) exponentialBackoff(batch *dynamodb.BatchWriteItemInput, numOfRetries int, tableName string) {
 	for i := 0; i < numOfRetries; i++ {
 		output, err := dbw.Client.BatchWriteItem(batch)
-		if err != nil{
-			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == dynamodb.ErrCodeProvisionedThroughputExceededException{
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == dynamodb.ErrCodeProvisionedThroughputExceededException {
 				log.Print("batch send fully throttled with error. retry pending", err)
 			} else {
 				log.Print("batch send failed", err)
@@ -102,7 +123,7 @@ func (dbw *DatabaseWriter) exponentialBackoff(batch *dynamodb.BatchWriteItemInpu
 		} else if len(output.UnprocessedItems) != 0 {
 			log.Print("batch send partially throttled")
 			batch.RequestItems = output.UnprocessedItems
-		}  else{
+		} else {
 			return
 		}
 		delay := math.Pow(2.0, float64(i))
@@ -165,7 +186,7 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 			return
 		}
 		deltas = append(deltas, Item{
-			M: 1001,
+			M: dbw.MarketDescriptor.ID,
 			T: time.Now().UnixNano(),
 			A: amount,
 			P: price,
