@@ -28,6 +28,7 @@ type DatabaseWriter struct {
 	MarketDescriptor *rest.MarketDescr
 	deltasWriteChan  chan []*dynamodb.WriteRequest
 	tradesWriteChan  chan []*dynamodb.WriteRequest
+	itemCounter      map[string]int
 }
 
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr) *DatabaseWriter {
@@ -43,6 +44,7 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr) *DatabaseWriter {
 		Session:          sess,
 		Client:           cli,
 		MarketDescriptor: marketDescriptor,
+		itemCounter:      map[string]int{"orderbooks": 0, "trades": 0},
 		deltasWriteChan:  make(chan []*dynamodb.WriteRequest, 1000000),
 		tradesWriteChan:  make(chan []*dynamodb.WriteRequest, 1000000),
 	}
@@ -56,9 +58,10 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr) *DatabaseWriter {
 func (dbw *DatabaseWriter) writer(writeChannel chan []*dynamodb.WriteRequest, tableName string) {
 	writeRequestQueue := []*dynamodb.WriteRequest{}
 	for writeRequests := range writeChannel {
+		dbw.itemCounter[tableName] += len(writeRequests)
 		writeRequestQueue = append(writeRequestQueue, writeRequests...)
 		// if statement below maximizes the number of full chunks of 25
-		if len(writeRequestQueue)%25 == 0 ||  len(writeRequestQueue) > 25*10 {
+		if len(writeRequestQueue)%25 == 0 || len(writeRequestQueue) > 25*10 {
 			dbw.write(writeRequestQueue, tableName)
 			writeRequestQueue = nil
 		}
@@ -74,7 +77,11 @@ func (dbw *DatabaseWriter) writeCheckpoint() {
 		P: 0, // price zero indicates the checkpoint
 	}}
 	requestItems := generateRequestItems(items)
-	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now())
+	fmt.Println(
+		"writing checkpoint", dbw.MarketDescriptor,
+		", orderbook items:", dbw.itemCounter["orderbooks"],
+		", trades items:", dbw.itemCounter["trades"],
+		time.Now())
 	dbw.deltasWriteChan <- requestItems
 }
 
