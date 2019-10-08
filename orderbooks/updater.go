@@ -60,6 +60,9 @@ type OrderBookUpdater struct {
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
 type OrderBookUpdaterParams struct {
+
+	WriteToDB bool
+
 	// SnapshotGetter is optional; it returns an up-to-date snapshot, typically
 	// from REST API. See NewOrderBookSnapshotGetterRESTBySymbol.
 	//
@@ -71,6 +74,7 @@ type OrderBookUpdaterParams struct {
 	// will be used.
 
 	clock clock.Clock
+
 
 	// getSnapshotDelay returns the delay before fetching a snapshot from REST
 	// API.
@@ -90,6 +94,10 @@ type OrderBookUpdaterParams struct {
 // NewOrderBookUpdater creates a new orderbook updater with the provided
 // params.
 func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
+	var databaseWriter *DatabaseWriter
+	if params.WriteToDB{
+		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor)
+	}
 	obu := &OrderBookUpdater{
 		params: *params,
 
@@ -100,7 +108,8 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 		stopChan:              make(chan struct{}),
 		addUpdateCB:           make(chan OnUpdateCB, 1),
 
-		curDatabaseWriter: NewDatabaseWriter(&params.MarketDescriptor),
+
+		curDatabaseWriter: databaseWriter,
 
 		cachedDeltas: map[common.SeqNum]common.OrderBookDelta{},
 		firstSyncing: true,

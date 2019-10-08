@@ -82,6 +82,7 @@ func main() {
 			})
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
+			WriteToDB: true,
 			MarketDescriptor: market,
 			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 				market.Exchange, market.Pair, &rest.CWRESTClientParams{
