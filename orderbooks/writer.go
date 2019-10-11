@@ -31,7 +31,7 @@ type DatabaseWriter struct {
 	writeChans       map[string]chan []*dynamodb.WriteRequest
 }
 
-func NewDatabaseWriter(marketDescriptor *rest.MarketDescr) *DatabaseWriter {
+func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
 	// Initialize a session that the SDK will use to load
 	// credentials from the shared credentials file ~/.aws/credentials
 	// and region from the shared configuration file ~/.aws/config.
@@ -45,21 +45,21 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr) *DatabaseWriter {
 		Client:           cli,
 		MarketDescriptor: marketDescriptor,
 		itemCounter: map[string]int{
-			"orderbooks": 0,
-			"trades":     0,
+			orderbookTableName: 0,
+			tradesTableName:     0,
 		},
 		writeQueues: map[string][]*dynamodb.WriteRequest{
-			"orderbooks": {},
-			"trades":     {},
+			orderbookTableName: {},
+			tradesTableName:     {},
 		},
 		writeChans: map[string]chan []*dynamodb.WriteRequest{
-			"orderbooks": make(chan []*dynamodb.WriteRequest, 10),
-			"trades":     make(chan []*dynamodb.WriteRequest, 10),
+			orderbookTableName: make(chan []*dynamodb.WriteRequest, 10),
+			tradesTableName:     make(chan []*dynamodb.WriteRequest, 10),
 		},
 	}
 	for i := 1; i <= 10; i++ {
-		go dbw.writer("orderbooks")
-		go dbw.writer("trades")
+		go dbw.writer(orderbookTableName)
+		go dbw.writer(tradesTableName)
 	}
 	return dbw
 }
@@ -99,24 +99,24 @@ func (dbw *DatabaseWriter) writeCheckpoint() {
 	requestItems := generateRequestItems(items)
 	fmt.Println(
 		"writing checkpoint", dbw.MarketDescriptor,
-		", orderbook items:", dbw.itemCounter["orderbooks"],
-		", trades items:", dbw.itemCounter["trades"],
+		", orderbook items:", dbw.itemCounter[orderbookTableName],
+		", trades items:", dbw.itemCounter[tradesTableName],
 		time.Now())
-	dbw.submitRequests(requestItems, "orderbooks")
+	dbw.submitRequests(requestItems, orderbookTableName)
 }
 
 // writeDelta serializes the OrderBookDelta update and concurrently writes it to the orderbooks table
 func (dbw *DatabaseWriter) writeDelta(obd common.OrderBookDelta) {
 	items := dbw.extractDeltas(obd)
 	requestItems := generateRequestItems(items)
-	dbw.submitRequests(requestItems, "orderbooks")
+	dbw.submitRequests(requestItems, orderbookTableName)
 }
 
 // writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades table
 func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 	items := dbw.extractTrades(tu)
 	requestItems := generateRequestItems(items)
-	dbw.submitRequests(requestItems, "trades")
+	dbw.submitRequests(requestItems, tradesTableName)
 }
 
 // write splits the request items to batches and dispatches them
