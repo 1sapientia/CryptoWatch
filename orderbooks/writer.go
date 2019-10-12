@@ -4,6 +4,7 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -15,20 +16,27 @@ import (
 	"time"
 )
 
+type RequestItem struct {
+	MarketID  int         `dynamodbav:"m"`
+	Timestamp float64     `dynamodbav:"t"` //timestamp (ns)
+	Items     [][]float64 `dynamodbav:"i"` // list of items where item is [timestamp, price, amount]
+}
+
 type Item struct {
-	M int     //market id
-	T int64   //timestamp (ms)
-	A float64 //amount (positive bid, negative ask)
-	P float64 //price
+	Timestamp float64 //market id
+	Price     float64 //timestamp (ms)
+	Amount    float64 //amount (positive bid, negative ask)
 }
 
 type DatabaseWriter struct {
-	Session          *session.Session
-	Client           *dynamodb.DynamoDB
-	MarketDescriptor *rest.MarketDescr
-	itemCounter      map[string]int
-	writeQueues      map[string][]*dynamodb.WriteRequest
-	writeChans       map[string]chan []*dynamodb.WriteRequest
+	Session            *session.Session
+	Client             *dynamodb.DynamoDB
+	MarketDescriptor   *rest.MarketDescr
+	itemCounter        map[string]int
+	orderbookTableName string
+	tradesTableName    string
+	deltasQueue        []Item
+	tradesQueue        []Item
 }
 
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
@@ -41,120 +49,85 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName st
 	// Create DynamoDB client
 	cli := dynamodb.New(sess)
 	dbw := &DatabaseWriter{
-		Session:          sess,
-		Client:           cli,
-		MarketDescriptor: marketDescriptor,
+		Session:            sess,
+		Client:             cli,
+		MarketDescriptor:   marketDescriptor,
+		orderbookTableName: orderbookTableName,
+		tradesTableName:    tradesTableName,
 		itemCounter: map[string]int{
 			orderbookTableName: 0,
-			tradesTableName:     0,
+			tradesTableName:    0,
 		},
-		writeQueues: map[string][]*dynamodb.WriteRequest{
-			orderbookTableName: {},
-			tradesTableName:     {},
-		},
-		writeChans: map[string]chan []*dynamodb.WriteRequest{
-			orderbookTableName: make(chan []*dynamodb.WriteRequest, 10),
-			tradesTableName:     make(chan []*dynamodb.WriteRequest, 10),
-		},
-	}
-	for i := 1; i <= 10; i++ {
-		go dbw.writer(orderbookTableName)
-		go dbw.writer(tradesTableName)
+		deltasQueue: []Item{},
+		tradesQueue: []Item{},
 	}
 	return dbw
-}
-
-// writer recieves a slice of write requests and processes it
-func (dbw *DatabaseWriter) writer(tableName string) {
-	for writeRequests := range dbw.writeChans[tableName] {
-		dbw.write(writeRequests, tableName)
-	}
-}
-
-// submitRequests appends the requests to the queue which is then potentially sent to the writer channel
-func (dbw *DatabaseWriter) submitRequests(requestItems []*dynamodb.WriteRequest, tableName string) {
-	dbw.writeQueues[tableName] = append(dbw.writeQueues[tableName], requestItems...)
-	queueLength := len(dbw.writeQueues[tableName])
-	if queueLength > 0 && (queueLength%25 == 0 || queueLength > 25*10) {
-		// dont block if chan is full. the queued requests will be processed later
-		select {
-		case dbw.writeChans[tableName] <- dbw.writeQueues[tableName]:
-			{
-				dbw.itemCounter[tableName] += queueLength
-				dbw.writeQueues[tableName] = nil
-			}
-		default:
-		}
-	}
 }
 
 // writeCheckpoint writes the checkpoint item to the database
 func (dbw *DatabaseWriter) writeCheckpoint() {
 	items := []Item{{
-		M: dbw.MarketDescriptor.ID,
-		T: time.Now().UnixNano(),
-		A: 0,
-		P: 0, // price zero indicates the checkpoint
+		Timestamp: float64(time.Now().UnixNano()),
+		Price:     0, // price zero indicates the checkpoint
+		Amount:    0,
 	}}
-	requestItems := generateRequestItems(items)
 	fmt.Println(
 		"writing checkpoint", dbw.MarketDescriptor,
-		", orderbook items:", dbw.itemCounter[orderbookTableName],
-		", trades items:", dbw.itemCounter[tradesTableName],
+		", orderbook items:", dbw.itemCounter[dbw.orderbookTableName],
+		", trades items:", dbw.itemCounter[dbw.tradesTableName],
 		time.Now())
-	dbw.submitRequests(requestItems, orderbookTableName)
+	dbw.submitDeltas(items)
 }
 
 // writeDelta serializes the OrderBookDelta update and concurrently writes it to the orderbooks table
 func (dbw *DatabaseWriter) writeDelta(obd common.OrderBookDelta) {
 	items := dbw.extractDeltas(obd)
-	requestItems := generateRequestItems(items)
-	dbw.submitRequests(requestItems, orderbookTableName)
+	dbw.submitDeltas(items)
 }
 
 // writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades table
 func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 	items := dbw.extractTrades(tu)
-	requestItems := generateRequestItems(items)
-	dbw.submitRequests(requestItems, tradesTableName)
+	dbw.submitTrades(items)
 }
 
-// write splits the request items to batches and dispatches them
-func (dbw *DatabaseWriter) write(requestItems []*dynamodb.WriteRequest, tableName string) {
-	const chunkSize = 25
-	for i := 0; i < len(requestItems); i += chunkSize {
-		end := i + chunkSize
-		if end > len(requestItems) {
-			end = len(requestItems)
-		}
-		batch := &dynamodb.BatchWriteItemInput{
-			RequestItems: map[string][]*dynamodb.WriteRequest{tableName: requestItems[i:end]},
-		}
-		dbw.exponentialBackoff(batch, 5, tableName)
+// submitDeltas appends the deltas items to the queue which is then potentially sent to the database
+func (dbw *DatabaseWriter) submitDeltas(items []Item) {
+	dbw.deltasQueue = append(dbw.deltasQueue, items...)
+	if len(dbw.deltasQueue) > 1000 {
+		putItem := dbw.generatePutItem(dbw.deltasQueue[:1000], dbw.orderbookTableName)
+		go dbw.writeWithExponentialBackoff(putItem, dbw.orderbookTableName)
+		dbw.deltasQueue = dbw.deltasQueue[1000:]
 	}
 }
 
-// exponentialBackoff dispatches the request batch with retries
+// submitTrades appends the trades items to the queue which is then potentially sent to the database
+func (dbw *DatabaseWriter) submitTrades(items []Item) {
+	dbw.tradesQueue = append(dbw.tradesQueue, items...)
+	if len(dbw.tradesQueue) > 10 {
+		putItem := dbw.generatePutItem(dbw.tradesQueue[:10], dbw.tradesTableName)
+		go dbw.writeWithExponentialBackoff(putItem, dbw.tradesTableName)
+		dbw.tradesQueue = dbw.tradesQueue[10:]
+	}
+}
+
+// writeWithExponentialBackoff dispatches the put item with retries
 // The AWS SDKs for DynamoDB automatically retries throttled requests unless the request queue is full
 // (check ErrCodeProvisionedThroughputExceededException)
-func (dbw *DatabaseWriter) exponentialBackoff(batch *dynamodb.BatchWriteItemInput, numOfRetries int, tableName string) {
+func (dbw *DatabaseWriter) writeWithExponentialBackoff(item *dynamodb.PutItemInput, tableName string) {
+	numOfRetries := 10
 	for i := 0; i < numOfRetries; i++ {
-		output, err := dbw.Client.BatchWriteItem(batch)
-		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok && aerr.Code() == dynamodb.ErrCodeProvisionedThroughputExceededException {
-				fmt.Println("batch send fully throttled with error. retry pending", err)
-			} else {
-				fmt.Println("batch send failed", err)
-				return
-			}
-		} else if len(output.UnprocessedItems) != 0 {
-			fmt.Println("batch send partially throttled")
-			batch.RequestItems = output.UnprocessedItems
-		} else {
+		_, err := dbw.Client.PutItem(item)
+		if err == nil {
+			return
+		} else if aerr, ok := err.(awserr.Error); ok && aerr.Code() != dynamodb.ErrCodeProvisionedThroughputExceededException {
+			fmt.Println("put item failed", err)
 			return
 		}
+		fmt.Println("put item throttled with error. retry pending", err)
+
 		delay := math.Pow(2.0, float64(i))
-		log.Print("retrying in", delay, "seconds, remaining items:", len(batch.RequestItems[tableName]))
+		log.Print("retrying in", delay, "seconds")
 		time.Sleep(time.Duration(delay) * time.Second)
 	}
 }
@@ -171,10 +144,9 @@ func (dbw *DatabaseWriter) extractTrades(tu common.TradesUpdate) []Item {
 			return
 		}
 		trades = append(trades, Item{
-			M: dbw.MarketDescriptor.ID,
-			T: time.Now().UnixNano(),
-			A: amount,
-			P: price,
+			Timestamp: float64(time.Now().UnixNano()),
+			Amount:    amount,
+			Price:     price,
 		})
 	}
 	for _, newTrade := range tu.Trades {
@@ -198,10 +170,9 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 			amount *= -1
 		}
 		deltas = append(deltas, Item{
-			M: dbw.MarketDescriptor.ID,
-			T: time.Now().UnixNano(),
-			A: amount,
-			P: price,
+			Timestamp: float64(time.Now().UnixNano()),
+			Price:     price,
+			Amount:    amount,
 		})
 	}
 
@@ -213,10 +184,9 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 			return
 		}
 		deltas = append(deltas, Item{
-			M: dbw.MarketDescriptor.ID,
-			T: time.Now().UnixNano(),
-			A: amount,
-			P: price,
+			Timestamp: float64(time.Now().UnixNano()),
+			Price:     price,
+			Amount:    amount,
 		})
 	}
 
@@ -236,22 +206,33 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 	return deltas
 }
 
-// generateRequestItems maps a list of items to a list of dynamodb write requests
-func generateRequestItems(items []Item) []*dynamodb.WriteRequest {
-	writeRequests := make([]*dynamodb.WriteRequest, len(items))
-	// transform deltas to write requests
-	for i, delta := range items {
-		av, err := dynamodbattribute.MarshalMap(delta)
-		if err != nil {
-			fmt.Println("Got error marshalling new movie item:")
-			fmt.Println(err.Error())
-			os.Exit(1)
-		}
-		writeRequests[i] = &dynamodb.WriteRequest{
-			PutRequest: &dynamodb.PutRequest{
-				Item: av,
-			},
-		}
+// generatePutItem maps a list of items to a list of dynamodb write requests
+func (dbw *DatabaseWriter) generatePutItem(items []Item, tableName string) *dynamodb.PutItemInput {
+
+	timestamp := items[0].Timestamp
+	itemslist := [][]float64{}
+	for _, item := range items {
+		itemslist = append(itemslist, []float64{item.Timestamp, item.Price, item.Amount})
 	}
-	return writeRequests
+
+	requestItem := RequestItem{
+		MarketID:  dbw.MarketDescriptor.ID,
+		Timestamp: timestamp,
+		Items:     itemslist,
+	}
+
+	av, err := dynamodbattribute.MarshalMap(requestItem)
+	if err != nil {
+		fmt.Println("Got error marshalling the put item:")
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	input := &dynamodb.PutItemInput{
+		Item:      av,
+		TableName: aws.String(tableName),
+	}
+
+	return input
+
 }

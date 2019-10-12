@@ -82,10 +82,10 @@ func main() {
 			})
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
-			WriteToDB: true,
-			OrderbookTableName:"orderbooks1",
-			TradesTableName:"trades1",
-			MarketDescriptor: market,
+			WriteToDB:          true,
+			OrderbookTableName: "Orderbooks",
+			TradesTableName:    "Trades",
+			MarketDescriptor:   market,
 			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 				market.Exchange, market.Pair, &rest.CWRESTClientParams{
 					APIURL: cfg.APIURL,
