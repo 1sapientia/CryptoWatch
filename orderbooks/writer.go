@@ -9,10 +9,12 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/gocql/gocql"
 	"log"
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,8 +31,12 @@ type Item struct {
 }
 
 type DatabaseWriter struct {
-	Session            *session.Session
-	Client             *dynamodb.DynamoDB
+	CassandraSession *gocql.Session
+	CassandraCluster *gocql.ClusterConfig
+
+	DynamoSession *session.Session
+	Client        *dynamodb.DynamoDB
+
 	MarketDescriptor   *rest.MarketDescr
 	itemCounter        map[string]int
 	orderbookTableName string
@@ -40,6 +46,14 @@ type DatabaseWriter struct {
 }
 
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
+
+	cassandraCluster := gocql.NewCluster("127.0.0.1")
+	cassandraCluster.Keyspace = "orderbookretriever"
+	cassandraSession, err := cassandraCluster.CreateSession()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Initialize a session that the SDK will use to load
 	// credentials from the shared credentials file ~/.aws/credentials
 	// and region from the shared configuration file ~/.aws/config.
@@ -49,7 +63,11 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName st
 	// Create DynamoDB client
 	cli := dynamodb.New(sess)
 	dbw := &DatabaseWriter{
-		Session:            sess,
+
+		CassandraCluster: cassandraCluster,
+		CassandraSession: cassandraSession,
+
+		DynamoSession:      sess,
 		Client:             cli,
 		MarketDescriptor:   marketDescriptor,
 		orderbookTableName: orderbookTableName,
@@ -76,19 +94,68 @@ func (dbw *DatabaseWriter) writeCheckpoint() {
 		", orderbook items:", dbw.itemCounter[dbw.orderbookTableName],
 		", trades items:", dbw.itemCounter[dbw.tradesTableName],
 		time.Now())
-	dbw.submitDeltas(items)
+	//dbw.submitDeltas(items)
+	go dbw.writeDeltasCassandra(items)
 }
 
 // writeDelta serializes the OrderBookDelta update and concurrently writes it to the orderbooks table
 func (dbw *DatabaseWriter) writeDelta(obd common.OrderBookDelta) {
 	items := dbw.extractDeltas(obd)
-	dbw.submitDeltas(items)
+	//dbw.submitDeltas(items)
+	go dbw.writeDeltasCassandra(items)
 }
 
 // writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades table
 func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 	items := dbw.extractTrades(tu)
-	dbw.submitTrades(items)
+	//dbw.submitTrades(items)
+	go dbw.writeTradesCassandra(items)
+}
+
+func (dbw *DatabaseWriter) writeTradesCassandra(tu []Item) {
+	for _, item := range tu {
+		dbw.writeWithExponentialBackoffCassandra(item, "Trades")
+	}
+}
+
+func (dbw *DatabaseWriter) writeDeltasCassandra(tu []Item) {
+	for _, item := range tu {
+		dbw.writeWithExponentialBackoffCassandra(item, "Orderbooks")
+	}
+}
+
+func fixExchangeName(old string) string {
+	return strings.ReplaceAll(strings.Title(strings.ToLower(old)), "-", "")
+}
+
+func fixPair(old string) string {
+	return strings.ToUpper(old[:3] + "/" + old[3:])
+}
+
+func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item, tableName string) {
+	numOfRetries := 5
+	for i := 0; i < numOfRetries; i++ {
+
+		if err := dbw.CassandraSession.Query(`
+            INSERT INTO `+tableName+` (exchange, pair, date, ts, price, amount)
+            VALUES (?, ?, ?, ?, ?, ?)
+            `,
+			fixExchangeName(dbw.MarketDescriptor.Exchange),
+			fixPair(dbw.MarketDescriptor.Pair),
+			time.Unix(0, int64(item.Timestamp)).Format("2006-01-02"),
+			time.Unix(0, int64(item.Timestamp)),
+			float32(item.Price),
+			float32(item.Amount)).Exec(); err != nil {
+			fmt.Println("put item throttled with error. retry pending", err)
+
+		} else {
+			return
+		}
+
+		delay := math.Pow(2.0, float64(i))
+		log.Print("retrying in", delay, "seconds")
+		time.Sleep(time.Duration(delay) * time.Second)
+	}
 }
 
 // submitDeltas appends the deltas items to the queue which is then potentially sent to the database

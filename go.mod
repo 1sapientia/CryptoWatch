@@ -10,6 +10,7 @@ require (
 	github.com/fatih/color v1.7.0
 	github.com/gdamore/encoding v1.0.0
 	github.com/gdamore/tcell v1.1.1
+	github.com/gocql/gocql v0.0.0-20191015152034-2274c8a9fab6
 	github.com/golang/protobuf v0.0.0-20180616230025-9f81198da99b
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/websocket v0.0.0-20180605202552-5ed622c449da
@@ -21,7 +22,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/rivo/tview v0.0.0-20190213202703-b373355e9db4
 	github.com/spf13/pflag v1.0.3
-	github.com/stretchr/testify v1.2.2
+	github.com/stretchr/testify v1.3.0
 	golang.org/x/sys v0.0.0-20181005133103-4497e2df6f9e
 	golang.org/x/text v0.3.0
 	gopkg.in/yaml.v2 v2.2.2
