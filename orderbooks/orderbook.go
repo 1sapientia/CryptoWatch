@@ -87,7 +87,7 @@ func (ob *OrderBook) SetSnapshotCheckpoint(writer *DatabaseWriter) {
 
 // IsTimeForCheckpoint checks if we need a new snapshot checkpoint
 func (ob *OrderBook) IsTimeForCheckpoint() bool {
-	return ob.lastCheckpoint.Hour() != time.Now().Hour()
+	return ob.lastCheckpoint.Day() != time.Now().Day()
 }
 
 // ordersWithDelta applies given deltas to the slice of orders, and returns a
