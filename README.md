@@ -20,6 +20,33 @@ git remote set-url origin git@github.com:1sapientia/cw-sdk-go.git
 ```
 git pull
 ```
+## Cassandra retriever deployment:
+
+Use committed binary or build go code from examples/orderbookRetriever
+```
+GOOS=linux GOARCH=amd64 go build -o orderbookRetrieverCassandra1.0 -ldflags="-s -w"
+```
+
+copy the selected binary to the Cassandra server
+
+add cw credentials to .cw/credentials.yml
+```
+api_key: 'xxx'
+secret_key: 'xxx'
+
+exchange_pairs:
+  bitfinex:
+    - "btcusd" 
+    ...
+```
+
+run generate_market_list.py and copy generated exchange pairs to .cw/credentials.yml.
+
+make sure cassandra docker image from [This](https://github.com/1sapientia/CassandraCompose)
+ repo is setup and running on localhost:9042. 
+
+run the binary. 
+
 
 ## API documentation:
 
