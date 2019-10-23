@@ -4,7 +4,7 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"fmt"
-	"github.com/gocql/gocql"
+	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
 	"log"
 	"math"
 	"strconv"
@@ -22,9 +22,7 @@ type Item struct {
 }
 
 type DatabaseWriter struct {
-	CassandraSession *gocql.Session
-	CassandraCluster *gocql.ClusterConfig
-
+	Producer   *kafka.Producer
 	MarketDescriptor   *rest.MarketDescr
 	orderbookTableName string
 	tradesTableName    string
@@ -35,17 +33,13 @@ type DatabaseWriter struct {
 
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
 
-	cassandraCluster := gocql.NewCluster("127.0.0.1")
-	cassandraCluster.Keyspace = "orderbookretriever"
-	cassandraSession, err := cassandraCluster.CreateSession()
+	producer, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": "localhost"})
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-
 	dbw := &DatabaseWriter{
 
-		CassandraCluster: cassandraCluster,
-		CassandraSession: cassandraSession,
+		Producer:         producer,
 
 		MarketDescriptor:   marketDescriptor,
 		orderbookTableName: orderbookTableName,
@@ -159,6 +153,11 @@ func fixPair(old string) string {
 func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 	numOfRetries := 5
 	for i := 0; i < numOfRetries; i++ {
+
+		dbw.Producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &item.Table, Partition: kafka.PartitionAny},
+			Value:          []byte(word),
+		}, nil)
 
 		if err := dbw.CassandraSession.Query(`
             INSERT INTO `+item.Table+` (exchange, pair, date, ts, price, amount)

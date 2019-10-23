@@ -4,27 +4,27 @@ go 1.12
 
 require (
 	code.cryptowat.ch/clock v0.0.0-20190102160946-e933bd4e0935
-	github.com/aws/aws-sdk-go v1.25.2
-	github.com/cryptowatch/clock v0.0.0-20190102160946-e933bd4e0935
-	github.com/davecgh/go-spew v1.1.0
+	github.com/Shopify/sarama v1.24.0
+	github.com/aws/aws-sdk-go v1.25.2 // indirect
+	github.com/cryptowatch/clock v0.0.0-20190102160946-e933bd4e0935 // indirect
 	github.com/fatih/color v1.7.0
-	github.com/gdamore/encoding v1.0.0
 	github.com/gdamore/tcell v1.1.1
-	github.com/gocql/gocql v0.0.0-20191015152034-2274c8a9fab6
-	github.com/golang/protobuf v0.0.0-20180616230025-9f81198da99b
+	github.com/gocql/gocql v0.0.0-20191015152034-2274c8a9fab6 // indirect
+	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/websocket v0.0.0-20180605202552-5ed622c449da
 	github.com/juju/errors v0.0.0-20170703010042-c7d06af17c68
-	github.com/lucasb-eyer/go-colorful v0.0.0-20181028223441-12d3b2882a08
-	github.com/mattn/go-colorable v0.0.9
-	github.com/mattn/go-isatty v0.0.4
-	github.com/mattn/go-runewidth v0.0.4
-	github.com/pmezard/go-difflib v1.0.0
+	github.com/juju/loggo v0.0.0-20190526231331-6e530bcce5d8 // indirect
+	github.com/juju/testing v0.0.0-20191001232224-ce9dec17d28b // indirect
+	github.com/klauspost/cpuid v1.2.1 // indirect
+	github.com/mattn/go-colorable v0.0.9 // indirect
+	github.com/mattn/go-isatty v0.0.4 // indirect
 	github.com/rivo/tview v0.0.0-20190213202703-b373355e9db4
 	github.com/spf13/pflag v1.0.3
 	github.com/stretchr/testify v1.3.0
-	golang.org/x/sys v0.0.0-20181005133103-4497e2df6f9e
-	golang.org/x/text v0.3.0
+	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
+	gopkg.in/confluentinc/confluent-kafka-go.v1 v1.1.0
+	gopkg.in/mgo.v2 v2.0.0-20190816093944-a6b53ec6cb22 // indirect
 	gopkg.in/yaml.v2 v2.2.2
 	honnef.co/go/tools v0.0.0-20190102054323-c2f93a96b099
 )
