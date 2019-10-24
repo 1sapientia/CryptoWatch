@@ -3,16 +3,18 @@ package orderbooks
 import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/common"
+	"code.cryptowat.ch/cw-sdk-go/proto/kafka"
 	"fmt"
-	"gopkg.in/confluentinc/confluent-kafka-go.v1/kafka"
+	"github.com/Shopify/sarama"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"log"
-	"math"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const numWorkers = 10
+const numWorkers = 1
 
 type Item struct {
 	Table     string
@@ -22,21 +24,29 @@ type Item struct {
 }
 
 type DatabaseWriter struct {
-	Producer   *kafka.Producer
 	MarketDescriptor   *rest.MarketDescr
 	orderbookTableName string
 	tradesTableName    string
 
 	writeChan  chan []Item
 	writeQueue []Item
+	Producer   sarama.AsyncProducer
 }
 
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
 
-	producer, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": "localhost"})
+	config := sarama.NewConfig()
+	config.Producer.RequiredAcks = sarama.WaitForLocal
+	config.Producer.Retry.Max = 5
+	//config.Producer.Return.Successes=true
+
+	brokers := []string{"localhost:9092"}
+	producer, err := sarama.NewAsyncProducer(brokers, config)
 	if err != nil {
+		// Should not reach here
 		panic(err)
 	}
+
 	dbw := &DatabaseWriter{
 
 		Producer:         producer,
@@ -53,14 +63,26 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName st
 		go dbw.writer()
 	}
 
+	go func() {
+		for msg := range producer.Successes() {
+			log.Println("success", msg)
+		}
+	}()
+
+	go func() {
+		for err := range producer.Errors() {
+			log.Println("err", err)
+		}
+	}()
+
 	return dbw
 }
 
-// writer collects the requests from the writeChannel and writes in batches
+// writer collects the requests from the writeChannel and writes to Kafka async
 func (dbw *DatabaseWriter) writer() {
 	for itemBatch := range dbw.writeChan {
 		for _, item := range itemBatch {
-			dbw.writeWithExponentialBackoffCassandra(item)
+			dbw.Producer.Input() <- dbw.GenerateProducerMessage(item)
 		}
 	}
 }
@@ -77,13 +99,13 @@ func (dbw *DatabaseWriter) writeCheckpoint() {
 	dbw.submitItems(items)
 }
 
-// writeDelta serializes the OrderBookDelta update and concurrently writes it to the orderbooks table
+// writeDelta serializes the OrderBookDelta update and concurrently writes it to the orderbooks Topic
 func (dbw *DatabaseWriter) writeDelta(obd common.OrderBookDelta) {
 	items := dbw.extractDeltas(obd)
 	dbw.submitItems(items)
 }
 
-// writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades table
+// writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades Topic
 func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 	items := dbw.extractTrades(tu)
 	dbw.submitItems(items)
@@ -93,12 +115,12 @@ func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 func (dbw *DatabaseWriter) submitItems(items []Item) {
 	dbw.writeQueue = append(dbw.writeQueue, items...)
 	queueLength := len(dbw.writeQueue)
-	if queueLength > 1000 {
+	if queueLength > 1 {
 		// dont block if chan is full. the queued requests will be processed later
 		select {
-		case dbw.writeChan <- dbw.writeQueue[:1000]:
+		case dbw.writeChan <- dbw.writeQueue:
 			{
-				dbw.writeQueue = dbw.writeQueue[1000:]
+				dbw.writeQueue = nil
 			}
 		default:
 		}
@@ -149,35 +171,35 @@ func fixPair(old string) string {
 	return strings.ToUpper(newPair)
 }
 
-// writeWithExponentialBackoffCassandra dispatches the request batch with retries
-func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
-	numOfRetries := 5
-	for i := 0; i < numOfRetries; i++ {
+//GenerateProducerMessage generates Kafka message to send via producer
+func (dbw *DatabaseWriter) GenerateProducerMessage(item Item) *sarama.ProducerMessage{
 
-		dbw.Producer.Produce(&kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &item.Table, Partition: kafka.PartitionAny},
-			Value:          []byte(word),
-		}, nil)
+	timestampProto, _ := ptypes.TimestampProto(time.Unix(0, int64(item.Timestamp)))
+	messageKey := &kafka.MessageKey{
+		Exchange:             fixExchangeName(dbw.MarketDescriptor.Exchange),
+		Pair:                 fixPair(dbw.MarketDescriptor.Pair),
+	}
 
-		if err := dbw.CassandraSession.Query(`
-            INSERT INTO `+item.Table+` (exchange, pair, date, ts, price, amount)
-            VALUES (?, ?, ?, ?, ?, ?)
-            `,
-			fixExchangeName(dbw.MarketDescriptor.Exchange),
-			fixPair(dbw.MarketDescriptor.Pair),
-			time.Unix(0, int64(item.Timestamp)).Format("2006-01-02"),
-			time.Unix(0, int64(item.Timestamp)),
-			float32(item.Price),
-			float32(item.Amount)).Exec(); err != nil {
-			fmt.Println("put item throttled with error. retry pending", err)
+	messageValue := &kafka.MessageValue{
+		Price:                float32(item.Price),
+		Amount:               float32(item.Amount),
+		Timestamp:            timestampProto,
+	}
 
-		} else {
-			return
-		}
+	key, err := proto.Marshal(messageKey)
+	if err != nil {
+		panic(err)
+	}
 
-		delay := math.Pow(2.0, float64(i))
-		log.Print("retrying in", delay, "seconds")
-		time.Sleep(time.Duration(delay) * time.Second)
+	value, err := proto.Marshal(messageValue)
+	if err != nil {
+		panic(err)
+	}
+
+	return &sarama.ProducerMessage{
+		Topic: item.Table,
+		Key: sarama.ByteEncoder(key),
+		Value: sarama.ByteEncoder(value),
 	}
 }
 

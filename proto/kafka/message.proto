@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package kafka;
+
+import "google/protobuf/timestamp.proto";
+
+message MessageKey {
+  string exchange = 1;
+  string pair = 2;
+}
+
+message MessageValue {
+  float price = 1;
+  float amount = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
