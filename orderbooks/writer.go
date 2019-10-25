@@ -9,6 +9,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -30,18 +31,21 @@ type DatabaseWriter struct {
 
 	writeChan  chan []Item
 	writeQueue []Item
-	Producer   sarama.AsyncProducer
+	Producer   sarama.SyncProducer
 }
 
-func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
+func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string, brokers []string) *DatabaseWriter {
 
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForLocal
 	config.Producer.Retry.Max = 5
-	//config.Producer.Return.Successes=true
+	config.Producer.Retry.BackoffFunc = func(retries, maxRetries int) time.Duration {
+		delay := math.Pow(2.0, float64(retries))
+		return time.Duration(delay) * time.Second
+	}
+	config.Producer.Return.Successes = true
 
-	brokers := []string{"localhost:9092"}
-	producer, err := sarama.NewAsyncProducer(brokers, config)
+	producer, err := sarama.NewSyncProducer(brokers, config)
 	if err != nil {
 		// Should not reach here
 		panic(err)
@@ -49,7 +53,7 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName st
 
 	dbw := &DatabaseWriter{
 
-		Producer:         producer,
+		Producer: producer,
 
 		MarketDescriptor:   marketDescriptor,
 		orderbookTableName: orderbookTableName,
@@ -63,26 +67,20 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName st
 		go dbw.writer()
 	}
 
-	go func() {
-		for msg := range producer.Successes() {
-			log.Println("success", msg)
-		}
-	}()
-
-	go func() {
-		for err := range producer.Errors() {
-			log.Println("err", err)
-		}
-	}()
-
 	return dbw
 }
 
-// writer collects the requests from the writeChannel and writes to Kafka async
+// writer collects the requests from the writeChannel and async writes to Kafka
 func (dbw *DatabaseWriter) writer() {
 	for itemBatch := range dbw.writeChan {
-		for _, item := range itemBatch {
-			dbw.Producer.Input() <- dbw.GenerateProducerMessage(item)
+		messages := make([]*sarama.ProducerMessage, len(itemBatch))
+		for i, item := range itemBatch {
+			messages[i] = dbw.GenerateProducerMessage(item)
+		}
+		log.Println("Sending")
+		err := dbw.Producer.SendMessages(messages)
+		if err != nil {
+			log.Println("SendMessages failed", err)
 		}
 	}
 }
@@ -115,7 +113,7 @@ func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 func (dbw *DatabaseWriter) submitItems(items []Item) {
 	dbw.writeQueue = append(dbw.writeQueue, items...)
 	queueLength := len(dbw.writeQueue)
-	if queueLength > 1 {
+	if queueLength > 0 {
 		// dont block if chan is full. the queued requests will be processed later
 		select {
 		case dbw.writeChan <- dbw.writeQueue:
@@ -172,33 +170,29 @@ func fixPair(old string) string {
 }
 
 //GenerateProducerMessage generates Kafka message to send via producer
-func (dbw *DatabaseWriter) GenerateProducerMessage(item Item) *sarama.ProducerMessage{
+func (dbw *DatabaseWriter) GenerateProducerMessage(item Item) *sarama.ProducerMessage {
 
 	timestampProto, _ := ptypes.TimestampProto(time.Unix(0, int64(item.Timestamp)))
 	messageKey := &kafka.MessageKey{
-		Exchange:             fixExchangeName(dbw.MarketDescriptor.Exchange),
-		Pair:                 fixPair(dbw.MarketDescriptor.Pair),
+		Exchange: fixExchangeName(dbw.MarketDescriptor.Exchange),
+		Pair:     fixPair(dbw.MarketDescriptor.Pair),
 	}
 
 	messageValue := &kafka.MessageValue{
-		Price:                float32(item.Price),
-		Amount:               float32(item.Amount),
-		Timestamp:            timestampProto,
+		Price:     float32(item.Price),
+		Amount:    float32(item.Amount),
+		Timestamp: timestampProto,
 	}
 
-	key, err := proto.Marshal(messageKey)
-	if err != nil {
-		panic(err)
-	}
-
-	value, err := proto.Marshal(messageValue)
-	if err != nil {
-		panic(err)
+	key, err1 := proto.Marshal(messageKey)
+	value, err2 := proto.Marshal(messageValue)
+	if err1 != nil || err2 != nil {
+		log.Println("Proto marshaling failed", err1, err2)
 	}
 
 	return &sarama.ProducerMessage{
 		Topic: item.Table,
-		Key: sarama.ByteEncoder(key),
+		Key:   sarama.ByteEncoder(key),
 		Value: sarama.ByteEncoder(value),
 	}
 }

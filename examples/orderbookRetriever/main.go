@@ -11,12 +11,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
 const (
-	defaultExchange = "bitfinex"
-	defaultPair     = "btcusd"
+	brokers         = "localhost:9092"
+	orderbooksTopic = "Orderbooks"
+	tradesTopic     = "Trades"
 )
 
 func main() {
@@ -83,8 +85,9 @@ func main() {
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
 			WriteToDB:          true,
-			OrderbookTableName: "Orderbooks",
-			TradesTableName:    "Trades",
+			OrderbookTableName: orderbooksTopic,
+			TradesTableName:    tradesTopic,
+			Brokers:            strings.Split(brokers, ","),
 			MarketDescriptor:   market,
 			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 				market.Exchange, market.Pair, &rest.CWRESTClientParams{
