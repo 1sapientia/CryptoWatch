@@ -24,6 +24,8 @@ type getSnapshotResult struct {
 type OrderBookUpdater struct {
 	params OrderBookUpdaterParams
 
+	cassandraDeltasChan   chan common.CassandraDelta
+	cassandraTradesChan   chan common.CassandraTrade
 	tradesChan            chan common.TradesUpdate
 	deltasChan            chan common.OrderBookDelta
 	snapshotsChan         chan common.OrderBookSnapshot
@@ -55,7 +57,8 @@ type OrderBookUpdater struct {
 	// If firstSyncing is true, it means we'll be syncing the first time after
 	// the app start; this is needed to use a smaller randomized delay before
 	// fetching a snapshot.
-	firstSyncing bool
+	firstSyncing        bool
+
 }
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
@@ -102,6 +105,8 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 	obu := &OrderBookUpdater{
 		params: *params,
 
+		cassandraDeltasChan:   make(chan common.CassandraDelta, 1),
+		cassandraTradesChan:   make(chan common.CassandraTrade, 1),
 		deltasChan:            make(chan common.OrderBookDelta, 1),
 		tradesChan:            make(chan common.TradesUpdate, 1),
 		snapshotsChan:         make(chan common.OrderBookSnapshot, 1),
@@ -422,6 +427,14 @@ const (
 func (obu *OrderBookUpdater) eventLoop() {
 	for {
 		select {
+		case delta := <-obu.cassandraDeltasChan:
+			fmt.Println(delta)
+			obu.applyCachedDeltas()
+
+		case trades := <-obu.cassandraTradesChan:
+			fmt.Println(trades)
+			//obu.curDatabaseWriter.writeTradesCassandra(trades)
+
 		case delta := <-obu.deltasChan:
 			obu.receiveDeltaInternal(delta)
 			obu.params.internalEvent(internalEventDeltaHandled)
@@ -469,6 +482,14 @@ func (obu *OrderBookUpdater) eventLoop() {
 			return
 		}
 	}
+}
+
+func (obu *OrderBookUpdater) ReceiveCassandraDelta(delta common.CassandraDelta) {
+	obu.cassandraDeltasChan <- delta
+}
+
+func (obu *OrderBookUpdater) ReceiveCassandraTrade(trade common.CassandraTrade) {
+	obu.cassandraTradesChan <- trade
 }
 
 type deltasCheckResult struct {

@@ -28,6 +28,8 @@ func (id MarketID) Int64() (int64, error) {
 // intance, it will only ever have one of its properties non-null.
 // See OnMarketUpdate.
 type MarketUpdate struct {
+	CassandraDelta        *CassandraDelta        `json:"CassandraDelta,omitempty"`
+	CassandraTrade        *CassandraTrade        `json:"CassandraTrade,omitempty"`
 	OrderBookSnapshot     *OrderBookSnapshot     `json:"OrderBookSnapshot,omitempty"`
 	OrderBookDelta        *OrderBookDelta        `json:"OrderBookDelta,omitempty"`
 	OrderBookSpreadUpdate *OrderBookSpreadUpdate `json:"OrderBookSpreadUpdate,omitempty"`
@@ -84,6 +86,20 @@ type OrderBookSnapshot struct {
 
 	Bids []PublicOrder
 	Asks []PublicOrder
+}
+
+// CassandraDelta represents a single order book delta event extracted from cassandra database
+type CassandraDelta struct {
+	Timestamp time.Time
+	Price     float32
+	Amount    float32
+}
+
+// CassandraTrade represents a single trade event extracted from cassandra database
+type CassandraTrade struct {
+	Timestamp time.Time
+	Price     float32
+	Amount    float32
 }
 
 // OrderBookDelta represents an order book delta update, which is

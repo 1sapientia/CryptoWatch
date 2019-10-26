@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const (
@@ -89,24 +90,40 @@ func main() {
 			TradesTableName:    tradesTopic,
 			Brokers:            strings.Split(brokers, ","),
 			MarketDescriptor:   market,
-			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
-				market.Exchange, market.Pair, &rest.CWRESTClientParams{
-					APIURL: cfg.APIURL,
-				},
-			),
+			//SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
+			//	market.Exchange, market.Pair, &rest.CWRESTClientParams{
+			//		APIURL: cfg.APIURL,
+			//	},
+			//),
 		})
 		orderbookUpdaters[int64(market.ID)] = orderbookUpdater
 	}
 
-	// Create a new stream connection instance
-	c, err := websocket.NewStreamClient(&websocket.StreamClientParams{
-		WSParams: &websocket.WSParams{
-			URL:       cfg.StreamURL,
-			APIKey:    cfg.APIKey,
-			SecretKey: cfg.SecretKey,
+	var c websocket.Client
+
+	c, err = websocket.NewCassandraClient(&websocket.CassandraClientParams{
+		CassandraParams:    &websocket.CassandraParams{
+			URL:      "localhost:9042",
+			Keyspace: "orderbookretriever",
 		},
-		Subscriptions: subscriptions,
+		Markets:            markets,
+		Subscriptions:      subscriptions,
+		StartTime:          time.Now().Add(time.Hour*-24*10),
+		EndTime:            time.Now(),
+		OrderbookTableName: orderbooksTopic,
+		TradesTableName:    tradesTopic,
 	})
+
+
+	// Create a new stream connection instance
+	//c, err = websocket.NewStreamClient(&websocket.StreamClientParams{
+	//	WSParams: &websocket.WSParams{
+	//		URL:       cfg.StreamURL,
+	//		APIKey:    cfg.APIKey,
+	//		SecretKey: cfg.SecretKey,
+	//	},
+	//	Subscriptions: subscriptions,
+	//})
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
@@ -135,6 +152,10 @@ func main() {
 				orderbookUpdaters[marketID].ReceiveDelta(*delta)
 			} else if trades := md.TradesUpdate; trades != nil {
 				orderbookUpdaters[marketID].ReceiveTrades(*trades)
+			} else if cassandraDelta := md.CassandraDelta; cassandraDelta != nil {
+				orderbookUpdaters[marketID].ReceiveCassandraDelta(*cassandraDelta)
+			} else if cassandraTrade := md.CassandraTrade; cassandraTrade != nil {
+				orderbookUpdaters[marketID].ReceiveCassandraTrade(*cassandraTrade)
 			}
 		},
 	)

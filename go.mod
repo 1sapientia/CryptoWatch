@@ -9,7 +9,7 @@ require (
 	github.com/cryptowatch/clock v0.0.0-20190102160946-e933bd4e0935 // indirect
 	github.com/fatih/color v1.7.0
 	github.com/gdamore/tcell v1.1.1
-	github.com/gocql/gocql v0.0.0-20191015152034-2274c8a9fab6 // indirect
+	github.com/gocql/gocql v0.0.0-20191015152034-2274c8a9fab6
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/websocket v0.0.0-20180605202552-5ed622c449da
