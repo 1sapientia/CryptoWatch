@@ -28,8 +28,6 @@ func (id MarketID) Int64() (int64, error) {
 // intance, it will only ever have one of its properties non-null.
 // See OnMarketUpdate.
 type MarketUpdate struct {
-	CassandraDelta        *CassandraDelta        `json:"CassandraDelta,omitempty"`
-	CassandraTrade        *CassandraTrade        `json:"CassandraTrade,omitempty"`
 	OrderBookSnapshot     *OrderBookSnapshot     `json:"OrderBookSnapshot,omitempty"`
 	OrderBookDelta        *OrderBookDelta        `json:"OrderBookDelta,omitempty"`
 	OrderBookSpreadUpdate *OrderBookSpreadUpdate `json:"OrderBookSpreadUpdate,omitempty"`
@@ -111,6 +109,8 @@ type OrderBookDelta struct {
 	// See the SeqNum definition for more information.
 	SeqNum SeqNum
 
+	Timestamp time.Time
+
 	Bids OrderDeltas
 	Asks OrderDeltas
 }
@@ -140,6 +140,7 @@ type OrderBookSpreadUpdate struct {
 // TradesUpdate represents the most recent trades that have occurred for a
 // particular market.
 type TradesUpdate struct {
+	Timestamp time.Time
 	Trades []PublicTrade
 }
 

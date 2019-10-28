@@ -3,8 +3,11 @@ package orderbooks
 import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/common"
+	"fmt"
 	"github.com/juju/errors"
+	"log"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -56,8 +59,12 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
+	deltaItems := ob. extractDeltas(obd)
+
 	if writer != nil {
-		writer.writeDelta(obd)
+		for _, delta := range (deltaItems){
+			writer.writeDeltas(delta)
+		}
 	}
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
@@ -149,4 +156,90 @@ func ordersWithDelta(
 	}
 
 	return newOrders
+}
+
+// extractTrades serializes the TradesUpdate to a list of Items
+func (ob *OrderBook) extractTrades(tu common.TradesUpdate) []Item {
+	var trades []Item
+
+	parseTrade := func(newTrade common.PublicTrade) {
+		amount, err1 := strconv.ParseFloat(newTrade.Amount, 64)
+		price, err2 := strconv.ParseFloat(newTrade.Price, 64)
+		if err1 != nil || err2 != nil {
+			log.Print("trade string to float conversion failed", err1, err2)
+			return
+		}
+		trades = append(trades, Delta{
+			Timestamp: float64(time.Now().UnixNano()),
+			Amount:    amount,
+			Price:     price,
+		})
+	}
+	for _, newTrade := range tu.Trades {
+		parseTrade(newTrade)
+	}
+	return trades
+}
+
+// writeCheckpoint writes the checkpoint item to the database
+func (dbw *DatabaseWriter) writeCheckpoint() {
+	delta := Delta{
+		Timestamp: float64(time.Now().UnixNano()),
+		Price:     0, // price zero indicates the checkpoint
+		Amount:    0,
+	}
+	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now())
+	dbw.writeDeltas(delta)
+}
+
+
+// extractDeltas serializes the OrderBookDelta update to a list of Items
+func (ob *OrderBook) extractDeltas(obd common.OrderBookDelta) []Delta {
+	var deltas []Delta
+
+	parseOrders := func(newOrder common.PublicOrder, isAsk bool) {
+		amount, err1 := strconv.ParseFloat(newOrder.Amount, 64)
+		price, err2 := strconv.ParseFloat(newOrder.Price, 64)
+		if err1 != nil || err2 != nil {
+			log.Print("delta string to float conversion failed", err1, err2)
+			return
+		}
+		if isAsk {
+			amount *= -1
+		}
+		deltas = append(deltas, Delta{
+			Timestamp: float64(time.Now().UnixNano()),
+			Price:     price,
+			Amount:    amount,
+		})
+	}
+
+	parseRemovals := func(removePrice string) {
+		amount := 0.0 // remove
+		price, err2 := strconv.ParseFloat(removePrice, 64)
+		if err2 != nil {
+			log.Print("delta string to float conversion failed", err2)
+			return
+		}
+		deltas = append(deltas, Delta{
+			Timestamp: float64(time.Now().UnixNano()),
+			Price:     price,
+			Amount:    amount,
+		})
+	}
+
+	for _, newOrder := range obd.Asks.Set {
+		parseOrders(newOrder, true)
+	}
+	for _, newOrder := range obd.Bids.Set {
+		parseOrders(newOrder, false)
+	}
+
+	for _, removePrice := range obd.Asks.Remove {
+		parseRemovals(removePrice)
+	}
+	for _, removePrice := range obd.Bids.Remove {
+		parseRemovals(removePrice)
+	}
+	return deltas
 }

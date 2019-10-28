@@ -2,38 +2,32 @@ package orderbooks
 
 import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
-	"code.cryptowat.ch/cw-sdk-go/common"
-	"code.cryptowat.ch/cw-sdk-go/proto/kafka"
-	"fmt"
 	"github.com/Shopify/sarama"
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"log"
 	"math"
-	"strconv"
 	"time"
 )
 
 const numWorkers = 1
-
-type Item struct {
-	Table     string
-	Timestamp float64 //market id
-	Price     float64 //timestamp (ms)
-	Amount    float64 //amount (positive bid, negative ask)
-}
 
 type DatabaseWriter struct {
 	MarketDescriptor   *rest.MarketDescr
 	orderbookTableName string
 	tradesTableName    string
 
-	writeChan  chan []Item
-	writeQueue []Item
-	Producer   sarama.SyncProducer
+	snapshotsWriteChan chan []Item
+	tradesWriteChan    chan []Item
+	deltasWriteChan    chan []Item
+
+	snapshotsWriteQueue []Item
+	deltasWriteQueue    []Item
+	tradesWriteQueue    []Item
+
+	Producer          sarama.SyncProducer
+	snapshotTableName string
 }
 
-func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string, brokers []string) *DatabaseWriter {
+func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string, snapshotTableName string, brokers []string) *DatabaseWriter {
 
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForLocal
@@ -57,24 +51,31 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName st
 		MarketDescriptor:   marketDescriptor,
 		orderbookTableName: orderbookTableName,
 		tradesTableName:    tradesTableName,
+		snapshotTableName:    snapshotTableName,
 
-		writeChan:  make(chan []Item, numWorkers),
-		writeQueue: []Item{},
+		tradesWriteChan:    make(chan []Item, numWorkers),
+		deltasWriteChan:    make(chan []Item, numWorkers),
+		snapshotsWriteChan: make(chan []Item, numWorkers),
+
+		deltasWriteQueue:    []Item{},
+		tradesWriteQueue:    []Item{},
+		snapshotsWriteQueue: []Item{},
 	}
 
 	for i := 1; i <= numWorkers; i++ {
-		go dbw.writer()
+		go dbw.writer(&dbw.tradesWriteChan, dbw.MarketDescriptor, dbw.tradesTableName)
+		go dbw.writer(&dbw.deltasWriteChan, dbw.MarketDescriptor, dbw.orderbookTableName)
+		go dbw.writer(&dbw.snapshotsWriteChan, dbw.MarketDescriptor, dbw.tradesTableName)
 	}
-
 	return dbw
 }
 
 // writer collects the requests from the writeChannel and async writes to Kafka
-func (dbw *DatabaseWriter) writer() {
-	for itemBatch := range dbw.writeChan {
+func (dbw *DatabaseWriter) writer(channel *chan []Item, marketDescriptor *rest.MarketDescr, topic string) {
+	for itemBatch := range *channel {
 		messages := make([]*sarama.ProducerMessage, len(itemBatch))
 		for i, item := range itemBatch {
-			messages[i] = dbw.GenerateProducerMessage(item)
+			messages[i] = item.ConvertForKafka(topic, marketDescriptor.Exchange, marketDescriptor.Pair)
 		}
 		log.Println("Sending")
 		err := dbw.Producer.SendMessages(messages)
@@ -84,148 +85,32 @@ func (dbw *DatabaseWriter) writer() {
 	}
 }
 
-// writeCheckpoint writes the checkpoint item to the database
-func (dbw *DatabaseWriter) writeCheckpoint() {
-	items := []Item{{
-		Table:     dbw.orderbookTableName,
-		Timestamp: float64(time.Now().UnixNano()),
-		Price:     0, // price zero indicates the checkpoint
-		Amount:    0,
-	}}
-	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now())
-	dbw.submitItems(items)
-}
-
 // writeDelta serializes the OrderBookDelta update and concurrently writes it to the orderbooks Topic
-func (dbw *DatabaseWriter) writeDelta(obd common.OrderBookDelta) {
-	items := dbw.extractDeltas(obd)
-	dbw.submitItems(items)
+func (dbw *DatabaseWriter) writeDeltas(item Item) {
+	dbw.submitItem(&dbw.deltasWriteQueue, item)
 }
 
 // writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades Topic
-func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
-	items := dbw.extractTrades(tu)
-	dbw.submitItems(items)
+func (dbw *DatabaseWriter) writeTrades(item Item) {
+	dbw.submitItem(&dbw.tradesWriteQueue, item)
+}
+
+func (dbw *DatabaseWriter) writeSnapshots(item Item) {
+	dbw.submitItem(&dbw.tradesWriteQueue, item)
 }
 
 // submitItems appends the requests to the queue which is then potentially sent to the writer channel
-func (dbw *DatabaseWriter) submitItems(items []Item) {
-	dbw.writeQueue = append(dbw.writeQueue, items...)
-	queueLength := len(dbw.writeQueue)
+func (dbw *DatabaseWriter) submitItem(queue *[]Item, item Item) {
+	dbw.deltasWriteQueue = append(dbw.deltasWriteQueue, item)
+	queueLength := len(dbw.deltasWriteQueue)
 	if queueLength > 0 {
 		// dont block if chan is full. the queued requests will be processed later
 		select {
-		case dbw.writeChan <- dbw.writeQueue:
+		case dbw.deltasWriteChan <- dbw.deltasWriteQueue:
 			{
-				dbw.writeQueue = nil
+				dbw.deltasWriteQueue = nil
 			}
 		default:
 		}
 	}
-}
-
-
-//GenerateProducerMessage generates Kafka message to send via producer
-func (dbw *DatabaseWriter) GenerateProducerMessage(item Item) *sarama.ProducerMessage {
-
-	timestampProto, _ := ptypes.TimestampProto(time.Unix(0, int64(item.Timestamp)))
-	messageKey := &kafka.MessageKey{
-		Exchange: common.FixExchangeName(dbw.MarketDescriptor.Exchange),
-		Pair:     common.FixPair(dbw.MarketDescriptor.Pair),
-	}
-
-	messageValue := &kafka.MessageValue{
-		Price:     float32(item.Price),
-		Amount:    float32(item.Amount),
-		Timestamp: timestampProto,
-	}
-
-	key, err1 := proto.Marshal(messageKey)
-	value, err2 := proto.Marshal(messageValue)
-	if err1 != nil || err2 != nil {
-		log.Println("Proto marshaling failed", err1, err2)
-	}
-
-	return &sarama.ProducerMessage{
-		Topic: item.Table,
-		Key:   sarama.ByteEncoder(key),
-		Value: sarama.ByteEncoder(value),
-	}
-}
-
-// extractTrades serializes the TradesUpdate to a list of Items
-func (dbw *DatabaseWriter) extractTrades(tu common.TradesUpdate) []Item {
-	var trades []Item
-
-	parseTrade := func(newTrade common.PublicTrade) {
-		amount, err1 := strconv.ParseFloat(newTrade.Amount, 64)
-		price, err2 := strconv.ParseFloat(newTrade.Price, 64)
-		if err1 != nil || err2 != nil {
-			log.Print("trade string to float conversion failed", err1, err2)
-			return
-		}
-		trades = append(trades, Item{
-			Table:     dbw.tradesTableName,
-			Timestamp: float64(time.Now().UnixNano()),
-			Amount:    amount,
-			Price:     price,
-		})
-	}
-	for _, newTrade := range tu.Trades {
-		parseTrade(newTrade)
-	}
-	return trades
-}
-
-// extractDeltas serializes the OrderBookDelta update to a list of Items
-func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
-	var deltas []Item
-
-	parseOrders := func(newOrder common.PublicOrder, isAsk bool) {
-		amount, err1 := strconv.ParseFloat(newOrder.Amount, 64)
-		price, err2 := strconv.ParseFloat(newOrder.Price, 64)
-		if err1 != nil || err2 != nil {
-			log.Print("delta string to float conversion failed", err1, err2)
-			return
-		}
-		if isAsk {
-			amount *= -1
-		}
-		deltas = append(deltas, Item{
-			Table:     dbw.orderbookTableName,
-			Timestamp: float64(time.Now().UnixNano()),
-			Price:     price,
-			Amount:    amount,
-		})
-	}
-
-	parseRemovals := func(removePrice string) {
-		amount := 0.0 // remove
-		price, err2 := strconv.ParseFloat(removePrice, 64)
-		if err2 != nil {
-			log.Print("delta string to float conversion failed", err2)
-			return
-		}
-		deltas = append(deltas, Item{
-			Table:     dbw.orderbookTableName,
-			Timestamp: float64(time.Now().UnixNano()),
-			Price:     price,
-			Amount:    amount,
-		})
-	}
-
-	for _, newOrder := range obd.Asks.Set {
-		parseOrders(newOrder, true)
-	}
-	for _, newOrder := range obd.Bids.Set {
-		parseOrders(newOrder, false)
-	}
-
-	for _, removePrice := range obd.Asks.Remove {
-		parseRemovals(removePrice)
-	}
-	for _, removePrice := range obd.Bids.Remove {
-		parseRemovals(removePrice)
-	}
-	return deltas
 }

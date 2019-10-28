@@ -197,18 +197,39 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 			sc.params.EndTime).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
-
+			update := orderBookDeltaUpdateFromCassandra(ts, price, amount)
 			sc.callMarketUpdateListeners <- callMarketUpdateListenersReq{
 				market: common.Market{ID: common.MarketID(marketId)},
-				update: common.MarketUpdate{
-					CassandraDelta: &common.CassandraDelta{
-						Timestamp: ts,
-						Price:     price,
-						Amount:    amount,
-				}},
+				update: common.MarketUpdate{OrderBookDelta:&update},
 				listeners: listeners,
 			}
 		}
+	}
+}
+
+func orderBookDeltaUpdateFromCassandra(timestamp time.Time, price float32, amount float32) common.OrderBookDelta {
+	bidSet := []common.PublicOrder{}
+	askSet := []common.PublicOrder{}
+	bidRemove := []string{}
+	askRemove := []string{}
+
+	if amount == 0{
+		if price <==> 0{
+			askRemove = append(askRemove, )
+		}
+	}else{
+
+	}
+
+	return common.OrderBookDelta{
+		Bids: common.OrderDeltas{
+			Set:    bidSet,
+			Remove: bidRemove,
+		},
+		Asks: common.OrderDeltas{
+			Set:    askSet,
+			Remove: askRemove,
+		},
 	}
 }
 
@@ -235,7 +256,7 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 			sc.callMarketUpdateListeners <- callMarketUpdateListenersReq{
 				market: common.Market{ID: common.MarketID(marketId)},
 				update: common.MarketUpdate{
-					CassandraTrade: &common.CassandraTrade{
+					TradesUpdate: &common.CassandraTrade{
 						Timestamp: ts,
 						Price:     price,
 						Amount:    amount,
