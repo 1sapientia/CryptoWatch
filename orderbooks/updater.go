@@ -4,6 +4,7 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"fmt"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/juju/errors"
@@ -57,12 +58,19 @@ type OrderBookUpdater struct {
 	// If firstSyncing is true, it means we'll be syncing the first time after
 	// the app start; this is needed to use a smaller randomized delay before
 	// fetching a snapshot.
-	firstSyncing        bool
+	firstSyncing     bool
 
+	currentTimestamp time.Time
+	nextSnapshot time.Time
 }
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
 type OrderBookUpdaterParams struct {
+
+	MarketDescriptor rest.MarketDescr
+	StartTime        time.Time
+	EndTime          time.Time
+
 	WriteToDB          bool
 	OrderbookTableName string
 	TradesTableName    string
@@ -91,8 +99,6 @@ type OrderBookUpdaterParams struct {
 	// internalEvent is called right after processing an event in eventLoop.
 	// It's a no-op for prod.
 	internalEvent func(ie internalEvent)
-
-	MarketDescriptor rest.MarketDescr
 }
 
 // NewOrderBookUpdater creates a new orderbook updater with the provided
@@ -100,10 +106,15 @@ type OrderBookUpdaterParams struct {
 func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 	var databaseWriter *DatabaseWriter
 	if params.WriteToDB && params.OrderbookTableName != "" && params.TradesTableName != "" {
-		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, params.OrderbookTableName, params.TradesTableName, params.Brokers)
+		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, params.OrderbookTableName, params.TradesTableName, "", params.Brokers)
 	}
 	obu := &OrderBookUpdater{
 		params: *params,
+
+		curOrderBook: &OrderBook{
+			marketDescriptor: params.MarketDescriptor,
+			lastCheckpoint:   time.Now(),
+		},
 
 		cassandraDeltasChan:   make(chan common.CassandraDelta, 1),
 		cassandraTradesChan:   make(chan common.CassandraTrade, 1),
@@ -114,6 +125,7 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 		stopChan:              make(chan struct{}),
 		addUpdateCB:           make(chan OnUpdateCB, 1),
 
+		nextSnapshot:	   params.StartTime,
 		curDatabaseWriter: databaseWriter,
 
 		cachedDeltas: map[common.SeqNum]common.OrderBookDelta{},
@@ -427,21 +439,16 @@ const (
 func (obu *OrderBookUpdater) eventLoop() {
 	for {
 		select {
-		case delta := <-obu.cassandraDeltasChan:
-			fmt.Println(delta)
-			obu.applyCachedDeltas()
-
-		case trades := <-obu.cassandraTradesChan:
-			fmt.Println(trades)
-			//obu.curDatabaseWriter.writeTradesCassandra(trades)
 
 		case delta := <-obu.deltasChan:
-			obu.receiveDeltaInternal(delta)
+			obu.curOrderBook.ApplyDeltaOpt(delta, true, nil)
 			obu.params.internalEvent(internalEventDeltaHandled)
 
 		case trades := <-obu.tradesChan:
-			obu.curDatabaseWriter.writeTrades(trades)
-			obu.params.internalEvent(internalEventTradeHandled)
+			continue
+			fmt.Println(trades)
+			//obu.curDatabaseWriter.writeTrades(trades)
+			//obu.params.internalEvent(internalEventTradeHandled)
 
 		case shapshot := <-obu.snapshotsChan:
 			obu.receiveSnapshotInternal(shapshot)
@@ -490,6 +497,30 @@ func (obu *OrderBookUpdater) ReceiveCassandraDelta(delta common.CassandraDelta) 
 
 func (obu *OrderBookUpdater) ReceiveCassandraTrade(trade common.CassandraTrade) {
 	obu.cassandraTradesChan <- trade
+}
+
+func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
+	if ts.Before(obu.params.StartTime)  || ts.After(obu.params.EndTime){
+		//fmt.Println("skipping", ts)
+		return
+	}
+	obu.currentTimestamp = ts
+	for ; obu.nextSnapshot.Before(obu.currentTimestamp); obu.nextSnapshot = obu.nextSnapshot.Add(time.Second){
+		obu.takeSnapshot(obu.nextSnapshot)
+	}
+}
+
+func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
+	fmt.Println("taking snapshot", snapshotTime)
+	for _, bid := range(obu.curOrderBook.snapshot.Bids){
+		fmt.Print(bid)
+	}
+	fmt.Println()
+
+	for _, ask := range(obu.curOrderBook.snapshot.Asks){
+		fmt.Print(ask)
+	}
+	os.Exit(1)
 }
 
 type deltasCheckResult struct {

@@ -59,7 +59,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
-	deltaItems := ob. extractDeltas(obd)
+	deltaItems := ob.extractDeltas(obd)
 
 	if writer != nil {
 		for _, delta := range (deltaItems){
@@ -69,6 +69,8 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
+
+	fmt.Println("delta applied" , obd.Timestamp)
 
 	ob.snapshot.SeqNum = obd.SeqNum
 
