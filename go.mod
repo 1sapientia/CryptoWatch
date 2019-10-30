@@ -17,6 +17,7 @@ require (
 	github.com/juju/loggo v0.0.0-20190526231331-6e530bcce5d8 // indirect
 	github.com/juju/testing v0.0.0-20191001232224-ce9dec17d28b // indirect
 	github.com/klauspost/cpuid v1.2.1 // indirect
+	github.com/lib/pq v1.2.0
 	github.com/mattn/go-colorable v0.0.9 // indirect
 	github.com/mattn/go-isatty v0.0.4 // indirect
 	github.com/rivo/tview v0.0.0-20190213202703-b373355e9db4

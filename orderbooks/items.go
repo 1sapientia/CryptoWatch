@@ -14,14 +14,14 @@ type Item interface {
 	ConvertForKafka(topic string, exchange string, pair string) (*sarama.ProducerMessage)
 }
 
-type Order struct {
+type Trade struct {
 	Timestamp float64 //market id
 	Price     float64 //timestamp (ms)
 	Amount    float64 //amount (positive bid, negative ask)
 }
 
 //GenerateProducerMessage generates Kafka message to send via producer
-func (ord Order) ConvertForKafka(topic string, exchange string, pair string) *sarama.ProducerMessage {
+func (ord Trade) ConvertForKafka(topic string, exchange string, pair string) *sarama.ProducerMessage {
 
 	timestampProto, _ := ptypes.TimestampProto(time.Unix(0, int64(ord.Timestamp)))
 	messageKey := &kafka.MessageKey{
@@ -47,8 +47,6 @@ func (ord Order) ConvertForKafka(topic string, exchange string, pair string) *sa
 		Value: sarama.ByteEncoder(value),
 	}
 }
-
-
 
 type Delta struct {
 	Timestamp float64 //market id

@@ -6,6 +6,7 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"code.cryptowat.ch/cw-sdk-go/config"
 	"code.cryptowat.ch/cw-sdk-go/orderbooks"
+	"database/sql"
 	"fmt"
 	flag "github.com/spf13/pflag"
 	"log"
@@ -25,11 +26,13 @@ const (
 func main() {
 
 	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-26 15:29:09.355")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 15:29:09.355")
+
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
-	EndTime:=            time.Now()
+
 
 	// We need this since getting user's home dir can fail.
 	defaultConfig, err := config.DefaultFilepath()
@@ -57,6 +60,12 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Print(err)
 		os.Exit(1)
+	}
+
+	connStr := ""
+	postgresDB, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	restclient := rest.NewCWRESTClient(nil)
@@ -99,6 +108,7 @@ func main() {
 			MarketDescriptor:   market,
 			StartTime:          startTime,
 			EndTime:            EndTime,
+			PostgresDB: 		postgresDB,
 			//SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 			//	market.Exchange, market.Pair, &rest.CWRESTClientParams{
 			//		APIURL: cfg.APIURL,
@@ -150,23 +160,6 @@ func main() {
 		},
 	)
 
-	// Listen for market changes.
-	c.OnMarketUpdate(
-		func(market common.Market, md common.MarketUpdate) {
-			marketID, _ := market.ID.Int64()
-			var ts time.Time
-			if delta := md.OrderBookDelta; delta != nil {
-				//fmt.Println("delta", delta.Timestamp)
-				ts = delta.Timestamp
-			} else if trades := md.TradesUpdate; trades != nil {
-				//fmt.Println("trades", trades.Timestamp)
-				ts = trades.Timestamp
-			} else{
-				return
-			}
-			orderbookUpdaters[marketID].UpdateTimer(ts)
-		},
-	)
 
 	// Listen for market changes.
 	c.OnMarketUpdate(

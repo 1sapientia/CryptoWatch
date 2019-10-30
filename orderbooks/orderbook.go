@@ -22,6 +22,8 @@ var (
 // It is not thread-safe; so if you need to use it from more than one
 // goroutine, apply your own synchronization.
 type OrderBook struct {
+	intervalTrades   []Trade
+	intervalDeltas   []Delta
 	snapshot         common.OrderBookSnapshot
 	marketDescriptor rest.MarketDescr
 	lastCheckpoint   time.Time
@@ -59,7 +61,10 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
+
 	deltaItems := ob.extractDeltas(obd)
+
+	ob.intervalDeltas = append(ob.intervalDeltas, deltaItems...)
 
 	if writer != nil {
 		for _, delta := range (deltaItems){
@@ -70,9 +75,10 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
 
-	fmt.Println("delta applied" , obd.Timestamp)
+	//fmt.Println("delta applied" , obd.Timestamp)
 
-	ob.snapshot.SeqNum = obd.SeqNum
+	//ob.snapshot.SeqNum = obd.SeqNum
+	ob.snapshot.SeqNum += 1
 
 	return nil
 }
@@ -161,8 +167,8 @@ func ordersWithDelta(
 }
 
 // extractTrades serializes the TradesUpdate to a list of Items
-func (ob *OrderBook) extractTrades(tu common.TradesUpdate) []Item {
-	var trades []Item
+func (ob *OrderBook) extractTrades(tu common.TradesUpdate) []Trade {
+	var trades []Trade
 
 	parseTrade := func(newTrade common.PublicTrade) {
 		amount, err1 := strconv.ParseFloat(newTrade.Amount, 64)
@@ -171,7 +177,7 @@ func (ob *OrderBook) extractTrades(tu common.TradesUpdate) []Item {
 			log.Print("trade string to float conversion failed", err1, err2)
 			return
 		}
-		trades = append(trades, Delta{
+		trades = append(trades, Trade{
 			Timestamp: float64(time.Now().UnixNano()),
 			Amount:    amount,
 			Price:     price,
@@ -244,4 +250,14 @@ func (ob *OrderBook) extractDeltas(obd common.OrderBookDelta) []Delta {
 		parseRemovals(removePrice)
 	}
 	return deltas
+}
+
+func (ob *OrderBook) ApplyTrades(update common.TradesUpdate) {
+	trades := ob.extractTrades(update)
+	ob.intervalTrades = append(ob.intervalTrades, trades...)
+}
+
+func (ob *OrderBook) clearSnapshotData() {
+	ob.intervalTrades = nil
+	ob.intervalDeltas = nil
 }
