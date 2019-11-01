@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/juju/errors"
 	"log"
-	"sort"
 	"strconv"
 	"time"
 )
@@ -157,11 +156,11 @@ func ordersWithDelta(
 	}
 
 	// Sort results
-	if !reverse {
-		sort.Sort(common.PublicOrdersByPrice(newOrders))
-	} else {
-		sort.Sort(sort.Reverse(common.PublicOrdersByPrice(newOrders)))
-	}
+	//if !reverse {
+	//	sort.Sort(common.PublicOrdersByPrice(newOrders))
+	//} else {
+	//	sort.Sort(sort.Reverse(common.PublicOrdersByPrice(newOrders)))
+	//}
 
 	return newOrders
 }

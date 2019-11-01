@@ -4,6 +4,7 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"time"
 
@@ -23,10 +24,10 @@ type getSnapshotResult struct {
 	err      error
 }
 
-type IntervalData struct{
-	snapshot common.OrderBookSnapshot
-	intervalTrades   []Trade
-	intervalDeltas   []Delta
+type IntervalData struct {
+	snapshot       common.OrderBookSnapshot
+	intervalTrades []Trade
+	intervalDeltas []Delta
 }
 
 // OrderBookUpdater maintains the up-to-date orderbook by applying live updates
@@ -43,12 +44,10 @@ type OrderBookUpdater struct {
 	stopChan              chan struct{}
 	addUpdateCB           chan OnUpdateCB
 
-	takeSnapshotChan      chan IntervalData
+	takeSnapshotChan chan IntervalData
 
 	curOrderBook      *OrderBook
 	curDatabaseWriter *DatabaseWriter
-
-
 
 	updateCBs []OnUpdateCB
 
@@ -71,10 +70,10 @@ type OrderBookUpdater struct {
 	// If firstSyncing is true, it means we'll be syncing the first time after
 	// the app start; this is needed to use a smaller randomized delay before
 	// fetching a snapshot.
-	firstSyncing     bool
+	firstSyncing bool
 
 	currentTimestamp time.Time
-	nextSnapshot time.Time
+	nextSnapshot     time.Time
 }
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
@@ -138,10 +137,10 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 		stopChan:              make(chan struct{}),
 		addUpdateCB:           make(chan OnUpdateCB, 1),
 
-		takeSnapshotChan:      make(chan IntervalData, 1),
+		takeSnapshotChan: make(chan IntervalData, 1),
 
 
-		nextSnapshot:	   params.StartTime,
+		nextSnapshot:      params.StartTime,
 		curDatabaseWriter: databaseWriter,
 
 		cachedDeltas: map[common.SeqNum]common.OrderBookDelta{},
@@ -517,13 +516,13 @@ func (obu *OrderBookUpdater) ReceiveCassandraTrade(trade common.CassandraTrade) 
 }
 
 func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
-	if ts.Before(obu.params.StartTime)  || ts.After(obu.params.EndTime){
+	if ts.Before(obu.params.StartTime) || ts.After(obu.params.EndTime) {
 		//fmt.Println("skipping", ts)
 		return
 	}
 	obu.currentTimestamp = ts
 
-	for ; obu.nextSnapshot.Before(obu.currentTimestamp); obu.nextSnapshot = obu.nextSnapshot.Add(time.Minute){
+	for ; obu.nextSnapshot.Before(obu.currentTimestamp); obu.nextSnapshot = obu.nextSnapshot.Add(time.Minute) {
 		obu.takeSnapshot(obu.nextSnapshot)
 	}
 }
@@ -531,41 +530,52 @@ func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
 func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	defer obu.curOrderBook.clearSnapshotData()
 
-	if obu.curOrderBook.GetSeqNum()<10000{
+	if obu.curOrderBook.GetSeqNum() < 5000 {
 		fmt.Println("skipping", obu.curOrderBook.GetSeqNum())
 		return
 	}
 
-	volumeTrades := func(trades []Trade) float64{
+	tradeVolume := func(trades []Trade) float64 {
 		sum := 0.0
-		for _, trade := range trades{
+		for _, trade := range trades {
 			sum += trade.Amount
 		}
 		return sum
 	}(obu.curOrderBook.intervalTrades)
 
-	bid, _ := strconv.ParseFloat(obu.curOrderBook.snapshot.Bids[0].Price, 64)
-	ask, _ := strconv.ParseFloat(obu.curOrderBook.snapshot.Asks[0].Price, 64)
+	orderbookActivity := len(obu.curOrderBook.intervalDeltas)
+	tradeCount := len(obu.curOrderBook.intervalTrades)
 
 
-	mid := (bid+ask)/2
+	bids := obu.curOrderBook.snapshot.Bids
+	asks := obu.curOrderBook.snapshot.Asks
 
-	availableVolumeRange := func(snapshot common.OrderBookSnapshot, mid float64, spread float64) (float64, float64){
+
+	sort.Sort(common.PublicOrdersByPrice(asks))
+	sort.Sort(sort.Reverse(common.PublicOrdersByPrice(bids)))
+
+
+	bidPrice, _ := strconv.ParseFloat(bids[0].Price, 64)
+	askPrice, _ := strconv.ParseFloat(asks[0].Price, 64)
+
+	mid := (bidPrice + askPrice) / 2
+
+	availableVolumeRange := func(mid float64, spread float64) (float64, float64) {
 		sumBids := 0.0
-		for _, order := range snapshot.Bids{
+		for _, order := range bids {
 			amount, _ := strconv.ParseFloat(order.Amount, 64)
 			price, _ := strconv.ParseFloat(order.Price, 64)
-			if price < mid*(1-spread){
+			if price < mid*(1-spread) {
 				break
 			}
 			sumBids += amount
 		}
 
 		sumAsks := 0.0
-		for _, order := range snapshot.Asks{
+		for _, order := range asks {
 			amount, _ := strconv.ParseFloat(order.Amount, 64)
 			price, _ := strconv.ParseFloat(order.Price, 64)
-			if price > mid*(1+spread){
+			if price > mid*(1+spread) {
 				break
 			}
 			sumAsks += amount
@@ -574,11 +584,75 @@ func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 		return sumBids, sumAsks
 	}
 
-	avm10, avp10 := availableVolumeRange(obu.curOrderBook.snapshot, mid,0.10)
-	avm1, avp1 := availableVolumeRange(obu.curOrderBook.snapshot, mid,0.01)
+	bidsVolume10, asksVolume10 := availableVolumeRange(mid, 0.10)
+	bidsVolume1, asksVolume1 := availableVolumeRange(mid, 0.01)
 
+	//fmt.Println("taking snapshot", 							snapshotTime,
+	//	common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
+	//	common.FixPair(obu.params.MarketDescriptor.Pair),
+	//	tradeCount,
+	//	tradeVolume,
+	//	orderbookActivity,
+	//	bidsVolume10,
+	//	asksVolume10,
+	//	bidsVolume1,
+	//	asksVolume1,
+	//	bidPrice,
+	//	askPrice,)
 
-	fmt.Println("taking snapshot", snapshotTime, obu.params.MarketDescriptor, bid, ask, volumeTrades, len(obu.curOrderBook.intervalDeltas), len(obu.curOrderBook.intervalTrades), avm10, avp10, avm1, avp1)
+	res, err := obu.params.PostgresDB.Exec(`
+					INSERT INTO "OrderbookFeatures"
+								("Time",
+								 "Exchange",
+								 "Symbol",
+								 "TradeCount",
+								 "TradeVolume",
+								 "OrderbookActivity",
+								 "BidsVolume10",
+								 "AsksVolume10",
+								 "BidsVolume1",
+								 "AsksVolume1",
+								 "BidPrice",
+                               "AskPrice")
+							VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+							ON CONFLICT ("Time","Exchange","Symbol") DO UPDATE 
+  							SET "TradeCount" = excluded."TradeCount", 
+      							"TradeVolume" = excluded."TradeVolume",
+      							"OrderbookActivity" = excluded."OrderbookActivity",
+      							"BidsVolume10" = excluded."BidsVolume10",
+      							"AsksVolume10" = excluded."AsksVolume10",
+      							"BidsVolume1" = excluded."BidsVolume1",
+      							"AsksVolume1" = excluded."AsksVolume1",
+      							"BidPrice" = excluded."BidPrice",
+      							"AskPrice" = excluded."AskPrice";`,
+							snapshotTime,
+							common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
+							common.FixPair(obu.params.MarketDescriptor.Pair),
+							tradeCount,
+							tradeVolume,
+							orderbookActivity,
+							bidsVolume10,
+							asksVolume10,
+							bidsVolume1,
+							asksVolume1,
+							bidPrice,
+							askPrice,
+	)
+	if err != nil{
+		fmt.Println(res, err)
+		fmt.Println("failed snapshot", snapshotTime,
+			common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
+			common.FixPair(obu.params.MarketDescriptor.Pair),
+			tradeCount,
+			tradeVolume,
+			orderbookActivity,
+			bidsVolume10,
+			asksVolume10,
+			bidsVolume1,
+			asksVolume1,
+			bidPrice,
+			askPrice,)
+	}
 }
 
 type deltasCheckResult struct {

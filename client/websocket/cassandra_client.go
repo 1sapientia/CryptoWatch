@@ -223,8 +223,14 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 	var price float32
 	var amount float32
 
-	// subtract 24 hours from the StartTime to make sure that the midnight full snapshot is captured
-	for date := sc.params.StartTime.Add(time.Hour * -24); 0 < sc.params.EndTime.Sub(date).Hours()/24; date = date.Add(time.Hour * 24) {
+	startTime := sc.params.StartTime.Add(time.Minute * -24)
+	date := startTime
+	// subtract 24 mins from the StartTime to make sure that the midnight full snapshot is captured
+	for {
+		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
+			break
+		}
+		fmt.Println(date)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
@@ -232,7 +238,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 			common.FixExchangeName(exchange),
 			common.FixPair(pair),
 			date.Format("2006-01-02"),
-			sc.params.StartTime.Add(time.Hour * -24),
+			startTime,
 			sc.params.EndTime).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
@@ -245,7 +251,13 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 				update: common.MarketUpdate{OrderBookDelta:&update},
 				listeners: listeners,
 			}
+			startTime = ts
 		}
+		if err := iter.Close(); err != nil{
+			fmt.Println(err, "retry from", startTime)
+			continue
+		}
+		date = date.Add(time.Hour * 24)
 	}
 }
 
@@ -291,7 +303,12 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 	var price float32
 	var amount float32
 
-	for date := sc.params.StartTime; 0 < sc.params.EndTime.Sub(date).Hours()/24; date = date.Add(time.Hour * 24) {
+	startTime := sc.params.StartTime
+	date := startTime
+	for {
+		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
+			break
+		}
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
@@ -299,7 +316,7 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 			common.FixExchangeName(exchange),
 			common.FixPair(pair),
 			date.Format("2006-01-02"),
-			sc.params.StartTime,
+			startTime,
 			sc.params.EndTime).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
@@ -309,7 +326,14 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 				update: common.MarketUpdate{TradesUpdate:&update},
 				listeners: listeners,
 			}
+			startTime = ts
 		}
+
+		if err := iter.Close(); err != nil{
+			fmt.Println(err, "retry from", startTime)
+			continue
+		}
+		date = date.Add(time.Hour * 24)
 	}
 
 }
