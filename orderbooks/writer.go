@@ -228,12 +228,15 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 		})
 	}
 
-	parseRemovals := func(removePrice string) {
+	parseRemovals := func(removePrice string, isAsk bool) {
 		amount := 0.0 // remove
 		price, err2 := strconv.ParseFloat(removePrice, 64)
 		if err2 != nil {
 			log.Print("delta string to float conversion failed", err2)
 			return
+		}
+		if isAsk {
+			price *= -1
 		}
 		deltas = append(deltas, Item{
 			Table:     dbw.orderbookTableName,
@@ -251,10 +254,10 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 	}
 
 	for _, removePrice := range obd.Asks.Remove {
-		parseRemovals(removePrice)
+		parseRemovals(removePrice, true)
 	}
 	for _, removePrice := range obd.Bids.Remove {
-		parseRemovals(removePrice)
+		parseRemovals(removePrice, false)
 	}
 	return deltas
 }
