@@ -225,6 +225,19 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 
 	startTime := sc.params.StartTime.Add(time.Minute * -24)
 	date := startTime
+
+	update := common.OrderBookDelta{
+		Timestamp: time.Time{},
+		Bids:      common.OrderDeltas{
+			Set:    []common.PublicOrder{},
+			Remove: []string{},
+		},
+		Asks:      common.OrderDeltas{
+			Set:    []common.PublicOrder{},
+			Remove: []string{},
+		},
+	}
+
 	// subtract 24 mins from the StartTime to make sure that the midnight full snapshot is captured
 	for {
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
@@ -245,56 +258,76 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 			if price == 0{
 				continue
 			}
-			update := orderBookDeltaUpdateFromCassandra(ts, price, amount)
-			submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
-				market: common.Market{ID: common.MarketID(marketId)},
-				update: common.MarketUpdate{OrderBookDelta:&update},
-				listeners: listeners,
+			if ts.Sub(startTime).Milliseconds()>=0{
+				if !update.Timestamp.IsZero(){
+					u := update
+					submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
+						market: common.Market{ID: common.MarketID(marketId)},
+						update: common.MarketUpdate{OrderBookDelta:&u},
+						listeners: listeners,
+					}
+				}
+				update = common.OrderBookDelta{
+					Timestamp: time.Time{},
+					Bids:      common.OrderDeltas{
+						Set:    []common.PublicOrder{},
+						Remove: []string{},
+					},
+					Asks:      common.OrderDeltas{
+						Set:    []common.PublicOrder{},
+						Remove: []string{},
+					},
+				}
 			}
+			orderBookDeltaUpdateFromCassandra(&update, ts, price, amount)
 			startTime = ts
 		}
 		if err := iter.Close(); err != nil{
 			fmt.Println(err, "retry from", startTime)
+			time.Sleep(time.Second*10)
 			continue
 		}
 		date = date.Add(time.Hour * 24)
 	}
 }
 
-func orderBookDeltaUpdateFromCassandra(ts time.Time, price float32, amount float32) common.OrderBookDelta {
-	bidSet := []common.PublicOrder{}
-	askSet := []common.PublicOrder{}
-	bidRemove := []string{}
-	askRemove := []string{}
+func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Time, price float32, amount float32) {
 
-	p := fmt.Sprintf("%.5g", price)
+	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:03:51.977")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:04:00.977")
+
+	if ts.Before(EndTime)&&ts.After(startTime){
+		fmt.Println(ts, price, amount)
+	}
+
+	if price==183.93{
+		//fmt.Println(ts, amount)
+	}
+	p := fmt.Sprintf("%.5g",  math.Abs(float64(price)))
 	a := fmt.Sprintf("%.5g", math.Abs(float64(amount)))
 	if amount > 0{
-		bidSet = append(bidSet, common.PublicOrder{
+		delta.Bids.Set = append(delta.Bids.Set, common.PublicOrder{
 			Price:  p,
 			Amount: a,
 		})
 	}else if amount < 0{
-		askSet = append(askSet, common.PublicOrder{
+		delta.Asks.Set = append(delta.Asks.Set, common.PublicOrder{
 			Price:  p,
 			Amount: a,
 		})
 	}else{
-		askRemove = append(askRemove, p)
-		bidRemove = append(bidRemove, p)
-	}
+		if price < 0{
+			delta.Asks.Remove = append(delta.Asks.Remove, p)
+			delta.Bids.Remove = append(delta.Bids.Remove, p)
 
-	return common.OrderBookDelta{
-		Timestamp:ts,
-		Bids: common.OrderDeltas{
-			Set:    bidSet,
-			Remove: bidRemove,
-		},
-		Asks: common.OrderDeltas{
-			Set:    askSet,
-			Remove: askRemove,
-		},
+		} else {
+			delta.Bids.Remove = append(delta.Bids.Remove, p)
+			delta.Asks.Remove = append(delta.Asks.Remove, p)
+
+
+		}
 	}
+	delta.Timestamp=ts
 }
 
 func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string, pair string, listeners []MarketUpdateCB, submitTradesUpdateListeners chan<- callMarketUpdateListenersReq) {
@@ -331,6 +364,7 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 
 		if err := iter.Close(); err != nil{
 			fmt.Println(err, "retry from", startTime)
+			time.Sleep(time.Second*10)
 			continue
 		}
 		date = date.Add(time.Hour * 24)

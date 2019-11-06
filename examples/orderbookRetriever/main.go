@@ -25,7 +25,7 @@ const (
 
 func main() {
 
-	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 00:00:00.000")
+	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:00:00.000")
 	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-01 00:00:00.000")
 
 	if err != nil {
@@ -122,7 +122,7 @@ func main() {
 
 	c, err = websocket.NewCassandraClient(&websocket.CassandraClientParams{
 		CassandraParams:    &websocket.CassandraParams{
-			URL:      "localhost:9042",
+			URL:      "localhost:9043",
 			Keyspace: "orderbookretriever",
 		},
 		Markets:            markets,

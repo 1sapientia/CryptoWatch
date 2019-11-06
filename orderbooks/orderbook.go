@@ -70,11 +70,25 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 			writer.writeDeltas(delta)
 		}
 	}
+	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-03 04:31:57.977")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-03 04:33:00.977")
+
+	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
+		//fmt.Println(obd, len(deltaItems))
+	}
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
 
-	//fmt.Println("delta applied" , obd.Timestamp)
+
+	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
+		//fmt.Println(obd, len(deltaItems))
+	}
+
+	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0 && ob.snapshot.Asks[0].Price<ob.snapshot.Bids[0].Price{
+		//fmt.Println(ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, len(deltaItems))
+	}
+
 
 	//ob.snapshot.SeqNum = obd.SeqNum
 	ob.snapshot.SeqNum += 1

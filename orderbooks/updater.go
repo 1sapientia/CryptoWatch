@@ -587,19 +587,22 @@ func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	bidsVolume10, asksVolume10 := availableVolumeRange(mid, 0.10)
 	bidsVolume1, asksVolume1 := availableVolumeRange(mid, 0.01)
 
-	//fmt.Println("taking snapshot", 							snapshotTime,
-	//	common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
-	//	common.FixPair(obu.params.MarketDescriptor.Pair),
-	//	tradeCount,
-	//	tradeVolume,
-	//	orderbookActivity,
-	//	bidsVolume10,
-	//	asksVolume10,
-	//	bidsVolume1,
-	//	asksVolume1,
-	//	bidPrice,
-	//	askPrice,)
+	if bidPrice>askPrice{
+		fmt.Println("taking snapshot", snapshotTime,
+			common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
+			common.FixPair(obu.params.MarketDescriptor.Pair),
+			tradeCount,
+			tradeVolume,
+			orderbookActivity,
+			bidsVolume10,
+			asksVolume10,
+			bidsVolume1,
+			asksVolume1,
+			bidPrice,
+			askPrice,)
+	}
 
+    return
 	res, err := obu.params.PostgresDB.Exec(`
 					INSERT INTO "OrderbookFeatures"
 								("Time",
