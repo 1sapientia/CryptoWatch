@@ -62,6 +62,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 
 	deltaItems := ob.extractDeltas(obd)
+	//fmt.Println(deltaItems)
 
 	ob.intervalDeltas = append(ob.intervalDeltas, deltaItems...)
 
@@ -215,7 +216,7 @@ func (ob *OrderBook) extractDeltas(obd common.OrderBookDelta) []Delta {
 			amount *= -1
 		}
 		deltas = append(deltas, Delta{
-			Timestamp: float64(time.Now().UnixNano()),
+			Timestamp: float64(obd.Timestamp.UnixNano()),
 			Price:     price,
 			Amount:    amount,
 		})

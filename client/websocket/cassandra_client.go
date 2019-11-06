@@ -7,7 +7,6 @@ import (
 	"github.com/gocql/gocql"
 	"log"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -204,7 +203,7 @@ func (sc *CassandraClient) Connect() (err error) {
 		sc.waitgroup.Wait()
 		_ = sc.Close()
 		log.Print("Cassandra Querying Done")
-		os.Exit(0)
+		//os.Exit(0)
 	}()
 
 	return nil
@@ -255,6 +254,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		}
 		if err := iter.Close(); err != nil{
 			fmt.Println(err, "retry from", startTime)
+			time.Sleep(10*time.Second)
 			continue
 		}
 		date = date.Add(time.Hour * 24)
@@ -280,8 +280,11 @@ func orderBookDeltaUpdateFromCassandra(ts time.Time, price float32, amount float
 			Amount: a,
 		})
 	}else{
-		askRemove = append(askRemove, p)
-		bidRemove = append(bidRemove, p)
+		if price > 0{
+			bidRemove = append(bidRemove, p)
+		} else {
+			askRemove = append(askRemove, p)
+		}
 	}
 
 	return common.OrderBookDelta{
@@ -330,7 +333,8 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 		}
 
 		if err := iter.Close(); err != nil{
-			fmt.Println(err, "retry from", startTime)
+			fmt.Println(err, exchange, pair, "retry from", startTime)
+			time.Sleep(10*time.Second)
 			continue
 		}
 		date = date.Add(time.Hour * 24)

@@ -2,10 +2,13 @@ package orderbooks
 
 import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/juju/errors"
@@ -461,7 +464,7 @@ func (obu *OrderBookUpdater) eventLoop() {
 			obu.params.internalEvent(internalEventDeltaHandled)
 
 		case trades := <-obu.tradesChan:
-			obu.UpdateTimer(trades.Timestamp)
+			//obu.UpdateTimer(trades.Timestamp)
 			obu.curOrderBook.ApplyTrades(trades)
 			//obu.curDatabaseWriter.writeTrades(trades)
 			obu.params.internalEvent(internalEventTradeHandled)
@@ -522,13 +525,33 @@ func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
 	}
 	obu.currentTimestamp = ts
 
-	for ; obu.nextSnapshot.Before(obu.currentTimestamp); obu.nextSnapshot = obu.nextSnapshot.Add(time.Minute) {
+	for ; obu.nextSnapshot.Before(obu.currentTimestamp); obu.nextSnapshot = obu.nextSnapshot.Add(time.Hour*24) {
 		obu.takeSnapshot(obu.nextSnapshot)
 	}
 }
 
 func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	defer obu.curOrderBook.clearSnapshotData()
+
+
+	payload := func (vs []Delta) [][]float64 {
+		vsm := make([][]float64, len(vs))
+		for i, v := range vs {
+			vsm[i] = []float64{v.Timestamp, v.Price, v.Amount}
+		}
+		return vsm
+	}(obu.curOrderBook.intervalDeltas)
+
+	file, err := json.Marshal(payload)
+	fmt.Println(err)
+
+
+	err = ioutil.WriteFile(strings.Replace(
+		common.FixExchangeName(obu.params.MarketDescriptor.Exchange)+"_"+
+			common.FixPair(obu.params.MarketDescriptor.Pair)+"_"+
+				snapshotTime.Format("2006-01-02")+".json", "/", "_", 1), file, 0644)
+	fmt.Println(err)
+
 
 	if obu.curOrderBook.GetSeqNum() < 5000 {
 		fmt.Println("skipping", obu.curOrderBook.GetSeqNum())
@@ -587,19 +610,20 @@ func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	bidsVolume10, asksVolume10 := availableVolumeRange(mid, 0.10)
 	bidsVolume1, asksVolume1 := availableVolumeRange(mid, 0.01)
 
-	//fmt.Println("taking snapshot", 							snapshotTime,
-	//	common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
-	//	common.FixPair(obu.params.MarketDescriptor.Pair),
-	//	tradeCount,
-	//	tradeVolume,
-	//	orderbookActivity,
-	//	bidsVolume10,
-	//	asksVolume10,
-	//	bidsVolume1,
-	//	asksVolume1,
-	//	bidPrice,
-	//	askPrice,)
+	fmt.Println("taking snapshot", 							snapshotTime,
+		common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
+		common.FixPair(obu.params.MarketDescriptor.Pair),
+		tradeCount,
+		tradeVolume,
+		orderbookActivity,
+		bidsVolume10,
+		asksVolume10,
+		bidsVolume1,
+		asksVolume1,
+		bidPrice,
+		askPrice,)
 
+	return
 	res, err := obu.params.PostgresDB.Exec(`
 					INSERT INTO "OrderbookFeatures"
 								("Time",
