@@ -229,6 +229,7 @@ func (obu *OrderBookUpdater) receiveDeltaInternal(delta common.OrderBookDelta) {
 			*obu.minDeltaNum += 1
 		}
 	} else {
+		fmt.Println("ssss")
 		// Received out-of-order delta, screw all existing deltas
 
 		obu.minDeltaNum = new(common.SeqNum)
@@ -349,6 +350,7 @@ func (obu *OrderBookUpdater) applyCachedDeltas() {
 
 // getSnapshotFromAPIAfterTimeout should only be called from the eventLoop.
 func (obu *OrderBookUpdater) getSnapshotFromAPIAfterTimeout() {
+	fmt.Println("GEtter")
 	if obu.params.SnapshotGetter == nil {
 		// SnapshotGetter wasn't provided, so just don't do anything here (and
 		// we'll get in sync when we receive the snapshot from the websocket, it
@@ -431,6 +433,7 @@ func (obu *OrderBookUpdater) eventLoop() {
 			obu.params.internalEvent(internalEventTradeHandled)
 
 		case shapshot := <-obu.snapshotsChan:
+			fmt.Println(time.Now())
 			obu.receiveSnapshotInternal(shapshot)
 			obu.params.internalEvent(internalEventSnapshotHandled)
 

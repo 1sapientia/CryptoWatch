@@ -78,7 +78,8 @@ func (dbw *DatabaseWriter) writer() {
 		for i, item := range itemBatch {
 			messages[i] = dbw.GenerateProducerMessage(item)
 		}
-		log.Println("Sending")
+		//log.Println("Sending")
+
 		err := dbw.Producer.SendMessages(messages)
 		if err != nil {
 			log.Println("SendMessages failed", err)
