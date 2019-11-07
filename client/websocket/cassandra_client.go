@@ -258,7 +258,8 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 			if price == 0{
 				continue
 			}
-			if ts.Sub(startTime).Milliseconds()>=0{
+			if ts.Sub(startTime).Milliseconds()>=10{
+				fmt.Println(ts.Sub(startTime).Milliseconds())
 				if !update.Timestamp.IsZero(){
 					u := update
 					submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
@@ -293,11 +294,11 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 
 func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Time, price float32, amount float32) {
 
-	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:03:51.977")
+	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:03:41.977")
 	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:04:00.977")
 
 	if ts.Before(EndTime)&&ts.After(startTime){
-		fmt.Println(ts, price, amount)
+		//fmt.Println(ts, price, amount)
 	}
 
 	if price==183.93{
@@ -318,11 +319,9 @@ func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Tim
 	}else{
 		if price < 0{
 			delta.Asks.Remove = append(delta.Asks.Remove, p)
-			delta.Bids.Remove = append(delta.Bids.Remove, p)
 
 		} else {
 			delta.Bids.Remove = append(delta.Bids.Remove, p)
-			delta.Asks.Remove = append(delta.Asks.Remove, p)
 
 
 		}
