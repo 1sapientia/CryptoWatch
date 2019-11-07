@@ -87,7 +87,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 	}
 
 	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0 && ob.snapshot.Asks[0].Price<ob.snapshot.Bids[0].Price{
-		fmt.Println(ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, len(deltaItems))
+		//fmt.Println(ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, len(deltaItems))
 	}
 
 

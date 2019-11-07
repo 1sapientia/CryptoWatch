@@ -262,7 +262,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 				if ts.Sub(startTime).Milliseconds()>=1000{
 					fmt.Println(ts, ts.Sub(startTime).Milliseconds())
 				}
-				fmt.Println(ts, update)
+				//fmt.Println(ts, update)
 				if !update.Timestamp.IsZero(){
 					u := update
 					submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
