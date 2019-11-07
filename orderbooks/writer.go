@@ -37,6 +37,7 @@ type DatabaseWriter struct {
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string, brokers []string) *DatabaseWriter {
 
 	config := sarama.NewConfig()
+	config.Version, _ = sarama.ParseKafkaVersion("2.2.1")
 	config.Producer.RequiredAcks = sarama.WaitForLocal
 	config.Producer.Retry.Max = 5
 	config.Producer.Retry.BackoffFunc = func(retries, maxRetries int) time.Duration {
@@ -243,12 +244,15 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 		})
 	}
 
-	parseRemovals := func(removePrice string) {
+	parseRemovals := func(removePrice string, isAsk bool) {
 		amount := 0.0 // remove
 		price, err2 := strconv.ParseFloat(removePrice, 64)
 		if err2 != nil {
 			log.Print("delta string to float conversion failed", err2)
 			return
+		}
+		if isAsk {
+			price *= -1
 		}
 		deltas = append(deltas, Item{
 			Table:     dbw.orderbookTableName,
@@ -266,10 +270,10 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 	}
 
 	for _, removePrice := range obd.Asks.Remove {
-		parseRemovals(removePrice)
+		parseRemovals(removePrice, true)
 	}
 	for _, removePrice := range obd.Bids.Remove {
-		parseRemovals(removePrice)
+		parseRemovals(removePrice, false)
 	}
 	return deltas
 }

@@ -15,13 +15,16 @@ import (
 	"syscall"
 )
 
-const (
-	brokers         = "localhost:9092"
-	orderbooksTopic = "Orderbooks"
-	tradesTopic     = "Trades"
+
+var (
+	configFile string
+	orderbooksTopic = ""
+	tradesTopic     = ""
+	brokers  = ""
+	verbose  = false
 )
 
-func main() {
+func init() {
 
 	// We need this since getting user's home dir can fail.
 	defaultConfig, err := config.DefaultFilepath()
@@ -30,15 +33,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	var (
-		configFile string
-		verbose    bool
-	)
-
+	flag.StringVar(&orderbooksTopic, "orderbooksTopic", "Orderbooks", "Kafka orderbook topic equal to cassandra table name")
+	flag.StringVar(&tradesTopic, "tradesTopic", "Trades", "Kafka trades topic equal to cassandra table name")
+	flag.StringVar(&brokers, "brokers", "localhost:9092", "Kafka bootstrap brokers to connect to, as a comma separated list")
 	flag.StringVarP(&configFile, "config", "c", defaultConfig, "Configuration file")
 	flag.BoolVarP(&verbose, "verbose", "v", false, "Prints all debug messages to stdout")
 
 	flag.Parse()
+}
+
+func main() {
 
 	cfg, err := config.New(configFile)
 	if err != nil {
@@ -84,11 +88,11 @@ func main() {
 			})
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
-			WriteToDB:          true,
-			OrderbookTableName: orderbooksTopic,
-			TradesTableName:    tradesTopic,
-			Brokers:            strings.Split(brokers, ","),
-			MarketDescriptor:   market,
+			WriteToDB:        true,
+			OrderbookTopic:   orderbooksTopic,
+			TradesTopic:      tradesTopic,
+			Brokers:          strings.Split(brokers, ","),
+			MarketDescriptor: market,
 			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 				market.Exchange, market.Pair, &rest.CWRESTClientParams{
 					APIURL: cfg.APIURL,

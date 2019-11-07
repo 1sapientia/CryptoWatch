@@ -60,10 +60,10 @@ type OrderBookUpdater struct {
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
 type OrderBookUpdaterParams struct {
-	WriteToDB          bool
-	OrderbookTableName string
-	TradesTableName    string
-	Brokers            []string
+	WriteToDB      bool
+	OrderbookTopic string
+	TradesTopic    string
+	Brokers        []string
 
 	// SnapshotGetter is optional; it returns an up-to-date snapshot, typically
 	// from REST API. See NewOrderBookSnapshotGetterRESTBySymbol.
@@ -96,8 +96,8 @@ type OrderBookUpdaterParams struct {
 // params.
 func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 	var databaseWriter *DatabaseWriter
-	if params.WriteToDB && params.OrderbookTableName != "" && params.TradesTableName != "" {
-		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, params.OrderbookTableName, params.TradesTableName, params.Brokers)
+	if params.WriteToDB && params.OrderbookTopic != "" && params.TradesTopic != "" {
+		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, params.OrderbookTopic, params.TradesTopic, params.Brokers)
 	}
 	obu := &OrderBookUpdater{
 		params: *params,
