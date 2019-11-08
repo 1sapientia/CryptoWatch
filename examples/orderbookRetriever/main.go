@@ -81,11 +81,20 @@ func main() {
 				Resource: fmt.Sprintf("markets:%d:trades", market.ID),
 			})
 
+		exchange, err1 := restclient.GetExchangeDescr(market.Exchange)
+		pair, err2 := restclient.GetPairDescr(market.Pair)
+		if err1 != nil ||  err2 != nil {
+			log.Printf("failed to get exchange/pair %s/%s: %s", market.Exchange, market.Pair, err)
+			os.Exit(1)
+		}
+
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
 			WriteToDB:          true,
 			OrderbookTableName: "Orderbooks",
 			TradesTableName:    "Trades",
 			MarketDescriptor:   market,
+			ExchangeDescriptor: *exchange,
+			PairDescriptor: pair,
 			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 				market.Exchange, market.Pair, &rest.CWRESTClientParams{
 					APIURL: cfg.APIURL,

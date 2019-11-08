@@ -88,7 +88,9 @@ type OrderBookUpdaterParams struct {
 	// It's a no-op for prod.
 	internalEvent func(ie internalEvent)
 
-	MarketDescriptor rest.MarketDescr
+	MarketDescriptor   rest.MarketDescr
+	ExchangeDescriptor rest.ExchangeDescr
+	PairDescriptor     rest.PairDescr
 }
 
 // NewOrderBookUpdater creates a new orderbook updater with the provided
@@ -96,7 +98,7 @@ type OrderBookUpdaterParams struct {
 func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 	var databaseWriter *DatabaseWriter
 	if params.WriteToDB && params.OrderbookTableName != "" && params.TradesTableName != "" {
-		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, params.OrderbookTableName, params.TradesTableName)
+		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, &params.ExchangeDescriptor, &params.PairDescriptor, params.OrderbookTableName, params.TradesTableName)
 	}
 	obu := &OrderBookUpdater{
 		params: *params,

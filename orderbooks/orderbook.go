@@ -19,9 +19,9 @@ var (
 // It is not thread-safe; so if you need to use it from more than one
 // goroutine, apply your own synchronization.
 type OrderBook struct {
-	snapshot         common.OrderBookSnapshot
-	marketDescriptor rest.MarketDescr
-	lastCheckpoint   time.Time
+	snapshot           common.OrderBookSnapshot
+	marketDescriptor   rest.MarketDescr
+	lastCheckpoint     time.Time
 }
 
 func NewOrderBook(snapshot common.OrderBookSnapshot) *OrderBook {

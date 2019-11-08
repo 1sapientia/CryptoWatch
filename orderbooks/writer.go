@@ -8,7 +8,6 @@ import (
 	"log"
 	"math"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -29,11 +28,13 @@ type DatabaseWriter struct {
 	orderbookTableName string
 	tradesTableName    string
 
-	writeChan  chan []Item
-	writeQueue []Item
+	writeChan          chan []Item
+	writeQueue         []Item
+	ExchangeDescriptor *rest.ExchangeDescr
+	PairDescriptor     *rest.PairDescr
 }
 
-func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
+func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, exchangeDescriptor *rest.ExchangeDescr, pairDescriptor *rest.PairDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
 
 	cassandraCluster := gocql.NewCluster("127.0.0.1")
 	cassandraCluster.Keyspace = "orderbookretriever"
@@ -48,6 +49,8 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, orderbookTableName st
 		CassandraSession: cassandraSession,
 
 		MarketDescriptor:   marketDescriptor,
+		ExchangeDescriptor:   exchangeDescriptor,
+		PairDescriptor:   pairDescriptor,
 		orderbookTableName: orderbookTableName,
 		tradesTableName:    tradesTableName,
 
@@ -111,61 +114,17 @@ func (dbw *DatabaseWriter) submitItems(items []Item) {
 	}
 }
 
-//fixExchangeName maps the cryptowatch exchange names to correct format (camelcase)
-func fixExchangeName(old string) string {
-	mapping := map[string]string{
-		"bitfinex":     "Bitfinex",
-		"binance":      "Binance",
-		"kraken":       "Kraken",
-		"bitstamp":     "Bitstamp",
-		"bittrex":      "Bittrex",
-		"coinbase-pro": "CoinbasePro",
-		"bitmex":       "Bitmex",
-	}
-	if val, ok := mapping[old]; ok {
-		return val
-	}
-	fmt.Println("Warning: exchange mapping not defined. using default", old)
-	return strings.Title(strings.ToLower(old))
-}
-
-//fixPair maps the cryptowatch pair names to correct format (BASE/QUOTE/potential[Q,P,W] for futures)
-func fixPair(old string) string {
-	s := strings.Split(old, "-")
-	pair := s[0]
-	var quote string
-	if strings.HasSuffix(pair, "usd") {
-		quote = "USD"
-	} else if strings.HasSuffix(pair, "usdt") {
-		quote = "USDT"
-	} else if strings.HasSuffix(pair, "btc") {
-		quote = "BTC"
-	} else if strings.HasSuffix(pair, "eth") {
-		quote = "eth"
-	} else {
-		fmt.Println("Warning: pair mapping not defined. using default", old)
-		quote = pair[len(pair)-3:]
-	}
-	base := pair[:len(pair)-len(quote)]
-	newPair := base + "/" + quote
-	if len(s) > 1 {
-		future := s[1][0:1]
-		newPair += "/" + future
-	}
-	return strings.ToUpper(newPair)
-}
-
 // writeWithExponentialBackoffCassandra dispatches the request batch with retries
 func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 	numOfRetries := 5
 	for i := 0; i < numOfRetries; i++ {
-
+		//fmt.Println(item, dbw.PairDescriptor, dbw.ExchangeDescriptor)
 		if err := dbw.CassandraSession.Query(`
             INSERT INTO `+item.Table+` (exchange, pair, date, ts, price, amount)
             VALUES (?, ?, ?, ?, ?, ?)
             `,
-			fixExchangeName(dbw.MarketDescriptor.Exchange),
-			fixPair(dbw.MarketDescriptor.Pair),
+			dbw.ExchangeDescriptor.ID,
+			dbw.PairDescriptor.ID,
 			time.Unix(0, int64(item.Timestamp)).Format("2006-01-02"),
 			time.Unix(0, int64(item.Timestamp)),
 			float32(item.Price),
@@ -209,25 +168,7 @@ func (dbw *DatabaseWriter) extractTrades(tu common.TradesUpdate) []Item {
 // extractDeltas serializes the OrderBookDelta update to a list of Items
 func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 	var deltas []Item
-
-	parseOrders := func(newOrder common.PublicOrder, isAsk bool) {
-		amount, err1 := strconv.ParseFloat(newOrder.Amount, 64)
-		price, err2 := strconv.ParseFloat(newOrder.Price, 64)
-		if err1 != nil || err2 != nil {
-			log.Print("delta string to float conversion failed", err1, err2)
-			return
-		}
-		if isAsk {
-			amount *= -1
-		}
-		deltas = append(deltas, Item{
-			Table:     dbw.orderbookTableName,
-			Timestamp: float64(time.Now().UnixNano()),
-			Price:     price,
-			Amount:    amount,
-		})
-	}
-
+	ts := float64(time.Now().UnixNano())
 	parseRemovals := func(removePrice string, isAsk bool) {
 		amount := 0.0 // remove
 		price, err2 := strconv.ParseFloat(removePrice, 64)
@@ -240,10 +181,36 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 		}
 		deltas = append(deltas, Item{
 			Table:     dbw.orderbookTableName,
-			Timestamp: float64(time.Now().UnixNano()),
+			Timestamp: ts,
 			Price:     price,
 			Amount:    amount,
 		})
+	}
+
+	parseOrders := func(newOrder common.PublicOrder, isAsk bool) {
+		amount, err1 := strconv.ParseFloat(newOrder.Amount, 64)
+		price, err2 := strconv.ParseFloat(newOrder.Price, 64)
+		if err1 != nil || err2 != nil {
+			log.Print("delta string to float conversion failed", err1, err2)
+			return
+		}
+		if isAsk {
+			amount *= -1
+			price *= -1
+		}
+		deltas = append(deltas, Item{
+			Table:     dbw.orderbookTableName,
+			Timestamp: ts,
+			Price:     price,
+			Amount:    amount,
+		})
+	}
+
+	for _, removePrice := range obd.Asks.Remove {
+		parseRemovals(removePrice, true)
+	}
+	for _, removePrice := range obd.Bids.Remove {
+		parseRemovals(removePrice, false)
 	}
 
 	for _, newOrder := range obd.Asks.Set {
@@ -253,11 +220,5 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 		parseOrders(newOrder, false)
 	}
 
-	for _, removePrice := range obd.Asks.Remove {
-		parseRemovals(removePrice, true)
-	}
-	for _, removePrice := range obd.Bids.Remove {
-		parseRemovals(removePrice, false)
-	}
 	return deltas
 }
