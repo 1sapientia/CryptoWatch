@@ -350,6 +350,12 @@ func (obu *OrderBookUpdater) applyCachedDeltas() {
 
 // getSnapshotFromAPIAfterTimeout should only be called from the eventLoop.
 func (obu *OrderBookUpdater) getSnapshotFromAPIAfterTimeout() {
+
+	if obu.firstSyncing{
+		//do not query initially to avoid rate limit. instead wait a minute to get the snapshot via websocket
+		return
+	}
+
 	if obu.params.SnapshotGetter == nil {
 		// SnapshotGetter wasn't provided, so just don't do anything here (and
 		// we'll get in sync when we receive the snapshot from the websocket, it
