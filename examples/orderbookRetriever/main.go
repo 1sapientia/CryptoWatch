@@ -25,8 +25,8 @@ const (
 
 func main() {
 
-	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 00:00:00.000")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-01 00:00:00.000")
+	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 00:00:00.000")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-11 00:00:00.000")
 
 	if err != nil {
 		log.Print(err)
@@ -65,7 +65,7 @@ func main() {
 	connStr := ""
 	postgresDB, err := sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal(err)
+		//log.Fatal(err)
 	}
 
 	restclient := rest.NewCWRESTClient(nil)
@@ -100,12 +100,21 @@ func main() {
 				Resource: fmt.Sprintf("markets:%d:trades", market.ID),
 			})
 
+		exchange, err1 := restclient.GetExchangeDescr(market.Exchange)
+		pair, err2 := restclient.GetPairDescr(market.Pair)
+		if err1 != nil ||  err2 != nil {
+			log.Printf("failed to get exchange/pair %s/%s: %s", market.Exchange, market.Pair, err)
+			os.Exit(1)
+		}
+
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
 			WriteToDB:          false,
 			OrderbookTableName: orderbooksTopic,
 			TradesTableName:    tradesTopic,
 			Brokers:            strings.Split(brokers, ","),
 			MarketDescriptor:   market,
+			ExchangeDescriptor: *exchange,
+			PairDescriptor: pair,
 			StartTime:          startTime,
 			EndTime:            EndTime,
 			PostgresDB: 		postgresDB,
@@ -122,7 +131,7 @@ func main() {
 
 	c, err = websocket.NewCassandraClient(&websocket.CassandraClientParams{
 		CassandraParams:    &websocket.CassandraParams{
-			URL:      "localhost:9042",
+			URL:      "localhost:9043",
 			Keyspace: "orderbookretriever",
 		},
 		Markets:            markets,

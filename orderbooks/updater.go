@@ -26,8 +26,8 @@ type getSnapshotResult struct {
 
 type IntervalData struct {
 	snapshot       common.OrderBookSnapshot
-	intervalTrades []Trade
-	intervalDeltas []Delta
+	intervalTrades []Item
+	intervalDeltas []Item
 }
 
 // OrderBookUpdater maintains the up-to-date orderbook by applying live updates
@@ -78,14 +78,19 @@ type OrderBookUpdater struct {
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
 type OrderBookUpdaterParams struct {
-	MarketDescriptor rest.MarketDescr
 	StartTime        time.Time
 	EndTime          time.Time
+	Brokers            []string
+
+	PostgresDB    *sql.DB
+
+	MarketDescriptor   rest.MarketDescr
+	ExchangeDescriptor rest.ExchangeDescr
+	PairDescriptor     rest.PairDescr
 
 	WriteToDB          bool
 	OrderbookTableName string
 	TradesTableName    string
-	Brokers            []string
 
 	// SnapshotGetter is optional; it returns an up-to-date snapshot, typically
 	// from REST API. See NewOrderBookSnapshotGetterRESTBySymbol.
@@ -110,16 +115,16 @@ type OrderBookUpdaterParams struct {
 	// internalEvent is called right after processing an event in eventLoop.
 	// It's a no-op for prod.
 	internalEvent func(ie internalEvent)
-	PostgresDB    *sql.DB
+
 }
 
 // NewOrderBookUpdater creates a new orderbook updater with the provided
 // params.
 func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
-	var databaseWriter *DatabaseWriter
-	if params.WriteToDB && params.OrderbookTableName != "" && params.TradesTableName != "" {
-		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, params.OrderbookTableName, params.TradesTableName, "", params.Brokers)
-	}
+
+	databaseWriter := NewDatabaseWriter(&params.MarketDescriptor, &params.ExchangeDescriptor, &params.PairDescriptor, params.OrderbookTableName, params.TradesTableName)
+	databaseWriter.WriteToDB = params.WriteToDB
+
 	obu := &OrderBookUpdater{
 		params: *params,
 
@@ -138,7 +143,6 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 		addUpdateCB:           make(chan OnUpdateCB, 1),
 
 		takeSnapshotChan: make(chan IntervalData, 1),
-
 
 		nextSnapshot:      params.StartTime,
 		curDatabaseWriter: databaseWriter,
@@ -381,6 +385,12 @@ func (obu *OrderBookUpdater) applyCachedDeltas() {
 
 // getSnapshotFromAPIAfterTimeout should only be called from the eventLoop.
 func (obu *OrderBookUpdater) getSnapshotFromAPIAfterTimeout() {
+
+	if obu.firstSyncing{
+		//do not query initially to avoid rate limit. instead wait a minute to get the snapshot via websocket
+		return
+	}
+
 	if obu.params.SnapshotGetter == nil {
 		// SnapshotGetter wasn't provided, so just don't do anything here (and
 		// we'll get in sync when we receive the snapshot from the websocket, it
@@ -454,15 +464,14 @@ const (
 func (obu *OrderBookUpdater) eventLoop() {
 	for {
 		select {
-
 		case delta := <-obu.deltasChan:
 			obu.UpdateTimer(delta.Timestamp)
-			_ = obu.curOrderBook.ApplyDeltaOpt(delta, true, nil)
+			_ = obu.curOrderBook.ApplyDeltaOpt(delta, true,  obu.curDatabaseWriter)
 			obu.params.internalEvent(internalEventDeltaHandled)
 
 		case trades := <-obu.tradesChan:
 			obu.UpdateTimer(trades.Timestamp)
-			obu.curOrderBook.ApplyTrades(trades)
+			obu.curOrderBook.ApplyTrades(trades, obu.curDatabaseWriter)
 			//obu.curDatabaseWriter.writeTrades(trades)
 			obu.params.internalEvent(internalEventTradeHandled)
 
@@ -530,12 +539,12 @@ func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
 func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	defer obu.curOrderBook.clearSnapshotData()
 
-	if obu.curOrderBook.GetSeqNum() < 5000 {
+	if obu.curOrderBook.GetSeqNum() < 10 {
 		fmt.Println("skipping", obu.curOrderBook.GetSeqNum())
 		return
 	}
 
-	tradeVolume := func(trades []Trade) float64 {
+	tradeVolume := func(trades []Item) float64 {
 		sum := 0.0
 		for _, trade := range trades {
 			sum += trade.Amount
@@ -587,20 +596,26 @@ func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	bidsVolume10, asksVolume10 := availableVolumeRange(mid, 0.10)
 	bidsVolume1, asksVolume1 := availableVolumeRange(mid, 0.01)
 
-	//fmt.Println("taking snapshot", 							snapshotTime,
-	//	common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
-	//	common.FixPair(obu.params.MarketDescriptor.Pair),
-	//	tradeCount,
-	//	tradeVolume,
-	//	orderbookActivity,
-	//	bidsVolume10,
-	//	asksVolume10,
-	//	bidsVolume1,
-	//	asksVolume1,
-	//	bidPrice,
-	//	askPrice,)
+	if bidPrice>askPrice{
+		fmt.Println("taking snapshot", 							snapshotTime,
+			common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
+			common.FixPair(obu.params.MarketDescriptor.Pair),
+			tradeCount,
+			tradeVolume,
+			orderbookActivity,
+			bidsVolume10,
+			asksVolume10,
+			bidsVolume1,
+			asksVolume1,
+			bidPrice,
+			askPrice,)
+	}
 
-	res, err := obu.params.PostgresDB.Exec(`
+
+	return
+
+	res, err := obu.params.PostgresDB.Exec(
+		`
 					INSERT INTO "OrderbookFeatures"
 								("Time",
 								 "Exchange",
