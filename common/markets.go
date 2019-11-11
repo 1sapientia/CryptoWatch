@@ -86,6 +86,20 @@ type OrderBookSnapshot struct {
 	Asks []PublicOrder
 }
 
+// CassandraDelta represents a single order book delta event extracted from cassandra database
+type CassandraDelta struct {
+	Timestamp time.Time
+	Price     float32
+	Amount    float32
+}
+
+// CassandraTrade represents a single trade event extracted from cassandra database
+type CassandraTrade struct {
+	Timestamp time.Time
+	Price     float32
+	Amount    float32
+}
+
 // OrderBookDelta represents an order book delta update, which is
 // the minimum amount of data necessary to keep a local order book up to date.
 // Since order book snapshots are throttled at 1 per minute, subscribing to
@@ -94,6 +108,8 @@ type OrderBookDelta struct {
 	// SeqNum is used to make sure deltas are processed in order.
 	// See the SeqNum definition for more information.
 	SeqNum SeqNum
+
+	Timestamp time.Time
 
 	Bids OrderDeltas
 	Asks OrderDeltas
@@ -124,6 +140,7 @@ type OrderBookSpreadUpdate struct {
 // TradesUpdate represents the most recent trades that have occurred for a
 // particular market.
 type TradesUpdate struct {
+	Timestamp time.Time
 	Trades []PublicTrade
 }
 

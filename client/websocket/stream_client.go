@@ -17,44 +17,6 @@ const (
 	DefaultStreamURL = "wss://stream.cryptowat.ch"
 )
 
-// MarketUpdateCB defines a callback function for OnMarketUpdate.
-type MarketUpdateCB func(common.Market, common.MarketUpdate)
-
-type callMarketUpdateListenersReq struct {
-	market    common.Market
-	update    common.MarketUpdate
-	listeners []MarketUpdateCB
-}
-
-// PairUpdateCB defines a callback function for OnPairUpdate.
-type PairUpdateCB func(common.Pair, common.PairUpdate)
-
-type callPairUpdateListenersReq struct {
-	listeners []PairUpdateCB
-	pair      common.Pair
-	update    common.PairUpdate
-}
-
-type callSubscriptionResultListenersReq struct {
-	listeners []SubscriptionResultCB
-	result    SubscriptionResult
-}
-
-type callUnsubscriptionResultListenersReq struct {
-	listeners []UnsubscriptionResultCB
-	result    UnsubscriptionResult
-}
-
-type callBandwidthUpdateListenersReq struct {
-	listeners []BandwidthUpdateCB
-	msg       Bandwidth
-}
-
-type callMissedMessagesListenersReq struct {
-	listeners []MissedMessagesCB
-	msg       MissedMessages
-}
-
 // StreamClient is used to connect to Cryptowatch's data streaming backend.
 // Typically you will get an instance using NewStreamClient(), set any state
 // listeners for the connection you might need, then set data listeners for
