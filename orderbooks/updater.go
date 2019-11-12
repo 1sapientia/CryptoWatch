@@ -541,7 +541,7 @@ func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
 func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	defer obu.curOrderBook.clearSnapshotData()
 	if len( obu.curOrderBook.snapshot.Bids)<=0{
-		fmt.Println(snapshotTime, "wtf")
+		//fmt.Println(snapshotTime, "wtf")
 	}
 	return
 	if obu.curOrderBook.GetSeqNum() < 100 {
