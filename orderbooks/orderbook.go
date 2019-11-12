@@ -66,7 +66,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:25:48.772")
 
 	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
-		//fmt.Println(obd)
+		fmt.Println(obd)
 	}
 
 	deltaItems := writer.extractDeltas(obd)
