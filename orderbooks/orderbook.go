@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/juju/errors"
 	"log"
+	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -61,10 +62,18 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
-	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:23:48.772")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:25:48.772")
+	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:00:00.000")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 17:00:00.000")
 
 	deltaItems := ob.extractDeltas(obd)
+
+
+	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
+		for _, item := range deltaItems{
+			fmt.Printf(",[\"n\",%d,%f]",obd.Timestamp.UnixNano(), math.Abs(item.Price))
+		}
+	}
+
 
 	ob.intervalDeltas = append(ob.intervalDeltas, deltaItems...)
 
@@ -76,11 +85,12 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 
 	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
-		fmt.Println(obd, len(deltaItems))
+		//fmt.Println(obd)
 	}
 
+
 	if len( ob.snapshot.Asks)<=0{
-		fmt.Println("wtf", obd.Timestamp)
+		//fmt.Println("wtf", obd.Timestamp)
 	}
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)

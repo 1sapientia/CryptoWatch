@@ -203,7 +203,8 @@ func (sc *CassandraClient) Connect() (err error) {
 	go func() {
 		sc.waitgroup.Wait()
 		_ = sc.Close()
-		log.Print("Cassandra Querying Done")
+		//log.Print("Cassandra Querying Done")
+		fmt.Print("]")
 		os.Exit(0)
 	}()
 
@@ -243,7 +244,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
 			break
 		}
-		fmt.Println(date)
+		//fmt.Println(date)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 

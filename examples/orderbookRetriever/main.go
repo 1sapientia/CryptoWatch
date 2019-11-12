@@ -79,7 +79,7 @@ func main() {
 				log.Printf("failed to get market %s/%s: %s", exchange, pair, err)
 				os.Exit(1)
 			}
-			fmt.Println(exchange, pair, market)
+			//fmt.Println(exchange, pair, market)
 			markets[market.ID] = market
 		}
 	}
@@ -175,6 +175,9 @@ func main() {
 			}
 		},
 	)
+
+	fmt.Print("[")
+
 
 	// Finally, connect.
 	if err := c.Connect(); err != nil {
