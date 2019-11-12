@@ -89,16 +89,7 @@ func main() {
 
 	// generate subscriptions and orderBookUpdaters for every market
 	for _, market := range markets {
-		subscriptions = append(subscriptions,
-			&websocket.StreamSubscription{
-				Resource: fmt.Sprintf("markets:%d:book:deltas", market.ID),
-			},
-			&websocket.StreamSubscription{
-				Resource: fmt.Sprintf("markets:%d:book:snapshots", market.ID),
-			},
-			&websocket.StreamSubscription{
-				Resource: fmt.Sprintf("markets:%d:trades", market.ID),
-			})
+
 
 		exchange, err1 := restclient.GetExchangeDescr(market.Exchange)
 		pair, err2 := restclient.GetPairDescr(market.Pair)
@@ -106,6 +97,20 @@ func main() {
 			log.Printf("failed to get exchange/pair %s/%s: %s", market.Exchange, market.Pair, err)
 			os.Exit(1)
 		}
+
+
+		subscriptions = append(subscriptions,
+			&websocket.StreamSubscription{
+				Resource: fmt.Sprintf("markets:%d:book:deltas", market.ID),
+				ExchangeDescriptor: *exchange,
+				PairDescriptor: pair,
+			},
+			&websocket.StreamSubscription{
+				Resource: fmt.Sprintf("markets:%d:book:snapshots", market.ID),
+			},
+			&websocket.StreamSubscription{
+				Resource: fmt.Sprintf("markets:%d:trades", market.ID),
+			})
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
 			WriteToDB:          false,

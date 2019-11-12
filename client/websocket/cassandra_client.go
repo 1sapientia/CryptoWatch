@@ -8,7 +8,6 @@ import (
 	"log"
 	"math"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,7 +84,6 @@ func NewCassandraClient(params *CassandraClientParams) (*CassandraClient, error)
 	}
 
 	go sc.listen()
-
 
 	return sc, nil
 }
@@ -217,7 +215,7 @@ func (sc *CassandraClient) Close() (err error) {
 	return nil
 }
 
-func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string, pair string, listeners []MarketUpdateCB, submitDeltasUpdateListeners chan<- callMarketUpdateListenersReq) {
+func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.ExchangeDescr, pair rest.PairDescr, listeners []MarketUpdateCB, submitDeltasUpdateListeners chan<- callMarketUpdateListenersReq) {
 	defer close(submitDeltasUpdateListeners)
 	var ts time.Time
 	var price float32
@@ -243,13 +241,13 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
 			break
 		}
-		fmt.Println(date)
+		fmt.Println(date, exchange.Name, pair.Symbol)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
                                 WHERE exchange=? and pair=? and date = ? and ts > ? and ts < ? order by ts`, sc.params.OrderbookTableName),
-			1,
-			9,
+			exchange.ID,
+			pair.ID,
 			date.Format("2006-01-02"),
 			startTime,
 			sc.params.EndTime).Iter()
@@ -325,14 +323,12 @@ func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Tim
 
 		} else {
 			delta.Bids.Remove = append(delta.Bids.Remove, p)
-
-
 		}
 	}
 	delta.Timestamp=ts
 }
 
-func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string, pair string, listeners []MarketUpdateCB, submitTradesUpdateListeners chan<- callMarketUpdateListenersReq) {
+func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange rest.ExchangeDescr, pair rest.PairDescr, listeners []MarketUpdateCB, submitTradesUpdateListeners chan<- callMarketUpdateListenersReq) {
 	defer 	close(submitTradesUpdateListeners)
 	var ts time.Time
 	var price float32
@@ -348,8 +344,8 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
                                 WHERE exchange=? and pair=? and date = ? and ts > ? and ts < ? order by ts`, sc.params.TradesTableName),
-			1,
-			9,
+			exchange.ID,
+			pair.ID,
 			date.Format("2006-01-02"),
 			startTime,
 			sc.params.EndTime).Iter()
@@ -387,17 +383,13 @@ func tradesUpdateFromCassandra(ts time.Time, price float32, amount float32) comm
 }
 
 
-func (sc *CassandraClient) parseSubscription(subscription *StreamSubscription) (string, string, string, string) {
+func (sc *CassandraClient) parseSubscription(subscription *StreamSubscription) (string, string, rest.ExchangeDescr, rest.PairDescr) {
 	//subscription.Resource:  "markets:%d:book:snapshots"
 	subscriptionParts := strings.Split(subscription.Resource, ":")
 	stream := subscriptionParts[len(subscriptionParts)-1]
-	marketId, err := strconv.Atoi(subscriptionParts[1])
-	if err != nil {
-		panic("marketId should be int")
-	}
 
-	exchange := sc.params.Markets[marketId].Exchange
-	pair := sc.params.Markets[marketId].Pair
+	exchange := subscription.ExchangeDescriptor
+	pair := subscription.PairDescriptor
 
 	return stream, subscriptionParts[1], exchange, pair
 

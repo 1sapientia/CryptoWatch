@@ -1,6 +1,9 @@
 package websocket
 
-import "code.cryptowat.ch/cw-sdk-go/common"
+import (
+	"code.cryptowat.ch/cw-sdk-go/client/rest"
+	"code.cryptowat.ch/cw-sdk-go/common"
+)
 
 type Client interface {
 	Connect() (err error)
@@ -16,6 +19,16 @@ type callMarketUpdateListenersReq struct {
 	market    common.Market
 	update    common.MarketUpdate
 	listeners []MarketUpdateCB
+}
+
+type StreamSubscription struct {
+	Resource           string
+	ExchangeDescriptor rest.ExchangeDescr
+	PairDescriptor     rest.PairDescr
+}
+
+func (s *StreamSubscription) GetResource() string {
+	return s.Resource
 }
 
 // PairUpdateCB defines a callback function for OnPairUpdate.

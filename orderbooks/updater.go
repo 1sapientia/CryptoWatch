@@ -130,6 +130,8 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 
 		curOrderBook: &OrderBook{
 			marketDescriptor: params.MarketDescriptor,
+			ExchangeDescriptor: params.ExchangeDescriptor,
+			PairDescriptor: params.PairDescriptor,
 			lastCheckpoint:   time.Now(),
 		},
 
@@ -538,8 +540,11 @@ func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
 
 func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	defer obu.curOrderBook.clearSnapshotData()
-
-	if obu.curOrderBook.GetSeqNum() < 10 {
+	if len( obu.curOrderBook.snapshot.Bids)<=0{
+		fmt.Println(snapshotTime, "wtf")
+	}
+	return
+	if obu.curOrderBook.GetSeqNum() < 100 {
 		fmt.Println("skipping", obu.curOrderBook.GetSeqNum())
 		return
 	}
@@ -554,7 +559,6 @@ func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 
 	orderbookActivity := len(obu.curOrderBook.intervalDeltas)
 	tradeCount := len(obu.curOrderBook.intervalTrades)
-
 
 	bids := obu.curOrderBook.snapshot.Bids
 	asks := obu.curOrderBook.snapshot.Asks

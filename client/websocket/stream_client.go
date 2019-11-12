@@ -46,13 +46,7 @@ type StreamClient struct {
 	mtx sync.Mutex
 }
 
-type StreamSubscription struct {
-	Resource string
-}
 
-func (s *StreamSubscription) GetResource() string {
-	return s.Resource
-}
 
 type StreamClientParams struct {
 	WSParams      *WSParams

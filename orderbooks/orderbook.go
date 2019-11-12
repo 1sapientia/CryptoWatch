@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/juju/errors"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -20,11 +21,13 @@ var (
 // It is not thread-safe; so if you need to use it from more than one
 // goroutine, apply your own synchronization.
 type OrderBook struct {
-	intervalTrades   []Item
-	intervalDeltas   []Item
-	snapshot         common.OrderBookSnapshot
-	marketDescriptor rest.MarketDescr
-	lastCheckpoint   time.Time
+	intervalTrades     []Item
+	intervalDeltas     []Item
+	snapshot           common.OrderBookSnapshot
+	marketDescriptor   rest.MarketDescr
+	lastCheckpoint     time.Time
+	ExchangeDescriptor rest.ExchangeDescr
+	PairDescriptor     rest.PairDescr
 }
 
 func NewOrderBook(snapshot common.OrderBookSnapshot) *OrderBook {
@@ -59,6 +62,12 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
+	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:23:48.772")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:25:48.772")
+
+	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
+		//fmt.Println(obd)
+	}
 
 	deltaItems := writer.extractDeltas(obd)
 
@@ -71,11 +80,19 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
 
-
-	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0 && ob.snapshot.Asks[0].Price<ob.snapshot.Bids[0].Price{
-		fmt.Println(ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, len(deltaItems))
+	if len( ob.snapshot.Asks)<=0{
+		fmt.Println("wtf", obd.Timestamp)
 	}
 
+
+	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0{
+		ask, _ := strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64);
+		bid, _ := strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64);
+
+		if ask<bid{
+			fmt.Println(ob.snapshot.Bids[0].Price, ob.snapshot.Asks[0].Price , obd.Timestamp, len(deltaItems), ob.ExchangeDescriptor.Name, ob.PairDescriptor.Symbol)
+		}
+	}
 
 	//ob.snapshot.SeqNum = obd.SeqNum
 	ob.snapshot.SeqNum += 1
