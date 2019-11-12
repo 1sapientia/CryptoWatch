@@ -63,8 +63,8 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
-	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:00:00.000")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 17:00:00.000")
+	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 00:00:00.000")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 23:00:00.000")
 
 	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
 		//fmt.Println(obd)
