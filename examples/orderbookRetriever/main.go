@@ -6,8 +6,10 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"code.cryptowat.ch/cw-sdk-go/config"
 	"code.cryptowat.ch/cw-sdk-go/orderbooks"
+	"encoding/json"
 	"fmt"
 	flag "github.com/spf13/pflag"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -18,6 +20,14 @@ const (
 	defaultExchange = "bitfinex"
 	defaultPair     = "btcusd"
 )
+
+type marketInstance struct {
+	MarketID   int
+	ExchangeID int
+	PairID     int
+	Exchange   string
+	Pair       string
+}
 
 func main() {
 
@@ -68,6 +78,8 @@ func main() {
 	subscriptions := []*websocket.StreamSubscription{}
 	orderbookUpdaters := map[int64]*orderbooks.OrderBookUpdater{}
 
+	marketInstances := []marketInstance{}
+
 	// generate subscriptions and orderBookUpdaters for every market
 	for _, market := range markets {
 		subscriptions = append(subscriptions,
@@ -83,10 +95,22 @@ func main() {
 
 		exchange, err1 := restclient.GetExchangeDescr(market.Exchange)
 		pair, err2 := restclient.GetPairDescr(market.Pair)
-		if err1 != nil ||  err2 != nil {
+		if err1 != nil || err2 != nil {
 			log.Printf("failed to get exchange/pair %s/%s: %s", market.Exchange, market.Pair, err)
 			os.Exit(1)
 		}
+
+		m := marketInstance{
+			MarketID:   market.ID,
+			ExchangeID: exchange.ID,
+			PairID:     pair.ID,
+			Exchange:   market.Exchange,
+			Pair:       market.Pair,
+		}
+		marketInstances = append(marketInstances, m)
+		fmt.Println(m)
+		continue
+		//fmt.Printf(",{\"market\":\"%s_%s\",\"exchangeID\":%d,\"pairID\":%d}", market.Exchange, market.Pair, exchange.ID, pair.ID)
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
 			WriteToDB:          true,
@@ -94,7 +118,7 @@ func main() {
 			TradesTableName:    "Trades",
 			MarketDescriptor:   market,
 			ExchangeDescriptor: *exchange,
-			PairDescriptor: pair,
+			PairDescriptor:     pair,
 			SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 				market.Exchange, market.Pair, &rest.CWRESTClientParams{
 					APIURL: cfg.APIURL,
@@ -103,6 +127,12 @@ func main() {
 		})
 		orderbookUpdaters[int64(market.ID)] = orderbookUpdater
 	}
+
+	file, _ := json.MarshalIndent(marketInstances, "", " ")
+	fmt.Print(ioutil.WriteFile("/home/gntr/PycharmProjects/RandomScripts/CassandraConsumer/markets.json", file, 0644))
+
+	fmt.Printf("]")
+	os.Exit(1)
 
 	// Create a new stream connection instance
 	c, err := websocket.NewStreamClient(&websocket.StreamClientParams{
