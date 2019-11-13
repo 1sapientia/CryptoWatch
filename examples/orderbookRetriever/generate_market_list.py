@@ -21,14 +21,12 @@ top100.extend(quotes)
 
 exchanges = {'gemini': 'Gemini',
      'bitfinex': 'Bitfinex',
-     'gateio': 'Gate.io',
      'bitflyer': 'bitFlyer',
      'okex': 'Okex',
      'liquid': 'Liquid',
      'binance-us': 'Binance.US',
      'dex-aggregated': 'DEX (aggregated)',
      'kraken-futures': 'Kraken Futures',
-     'huobi': 'Huobi',
      'coinone': 'Coinone',
      'coinbase-pro': 'Coinbase Pro',
      'bisq': 'Bisq',
@@ -41,10 +39,8 @@ exchanges = {'gemini': 'Gemini',
      'bittrex': 'Bittrex',
      'cexio': 'CEX.IO',
      'poloniex': 'Poloniex',
-     'bitz': 'Bit-Z',
      'bitstamp': 'Bitstamp',
      'luno': 'Luno',
-     'hitbtc': 'HitBTC',
      'okcoin': 'OKCoin'}
 
 def get_quote(market):

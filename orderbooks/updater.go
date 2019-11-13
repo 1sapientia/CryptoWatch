@@ -363,6 +363,8 @@ func (obu *OrderBookUpdater) getSnapshotFromAPIAfterTimeout() {
 		return
 	}
 
+	fmt.Println(time.Now(), " snapshot getter initiated", obu.params.MarketDescriptor.Exchange, obu.params.MarketDescriptor.Pair)
+
 	if obu.fetchSnapshotTimer != nil {
 		// Snapshot fetching is already scheduled, so nothing to do here
 		return
