@@ -5,10 +5,7 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"fmt"
 	"github.com/juju/errors"
-	"log"
-	"math"
 	"sort"
-	"strconv"
 	"time"
 )
 
@@ -23,11 +20,9 @@ var (
 // It is not thread-safe; so if you need to use it from more than one
 // goroutine, apply your own synchronization.
 type OrderBook struct {
-	intervalTrades   []Trade
-	intervalDeltas   []Delta
-	snapshot         common.OrderBookSnapshot
-	marketDescriptor rest.MarketDescr
-	lastCheckpoint   time.Time
+	snapshot           common.OrderBookSnapshot
+	marketDescriptor   rest.MarketDescr
+	lastCheckpoint     time.Time
 }
 
 func NewOrderBook(snapshot common.OrderBookSnapshot) *OrderBook {
@@ -62,52 +57,18 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
-	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 16:00:00.000")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 17:00:00.000")
-
-	deltaItems := ob.extractDeltas(obd)
-
-
-	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
-		for _, item := range deltaItems{
-			fmt.Printf(",[\"n\",%d,%f]",obd.Timestamp.UnixNano(), math.Abs(item.Price))
-		}
-	}
-
-
-	ob.intervalDeltas = append(ob.intervalDeltas, deltaItems...)
-
 	if writer != nil {
-		for _, delta := range (deltaItems){
-			writer.writeDeltas(delta)
-		}
-	}
-
-
-	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
-		//fmt.Println(obd)
-	}
-
-
-	if len( ob.snapshot.Asks)<=0{
-		//fmt.Println("wtf", obd.Timestamp)
+		writer.writeDelta(obd)
 	}
 
 	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
 
-
-	if obd.Timestamp.Before(EndTime)&&obd.Timestamp.After(startTime){
-		//fmt.Println(obd, len(deltaItems))
-	}
-
 	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0 && ob.snapshot.Asks[0].Price<ob.snapshot.Bids[0].Price{
-		//fmt.Println(ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, len(deltaItems))
+		fmt.Println(ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp)
 	}
 
-
-	//ob.snapshot.SeqNum = obd.SeqNum
-	ob.snapshot.SeqNum += 1
+	ob.snapshot.SeqNum = obd.SeqNum
 
 	return nil
 }
@@ -182,10 +143,6 @@ func ordersWithDelta(
 
 	// Add new orders (which are still in setMap)
 	for _, order := range setMap {
-		if _, ok := removeMap[order.Price]; ok {
-			// Need to remove this order, so don't add it
-			continue
-		}
 		newOrders = append(newOrders, order)
 	}
 
@@ -197,100 +154,4 @@ func ordersWithDelta(
 	}
 
 	return newOrders
-}
-
-// extractTrades serializes the TradesUpdate to a list of Items
-func (ob *OrderBook) extractTrades(tu common.TradesUpdate) []Trade {
-	var trades []Trade
-
-	parseTrade := func(newTrade common.PublicTrade) {
-		amount, err1 := strconv.ParseFloat(newTrade.Amount, 64)
-		price, err2 := strconv.ParseFloat(newTrade.Price, 64)
-		if err1 != nil || err2 != nil {
-			log.Print("trade string to float conversion failed", err1, err2)
-			return
-		}
-		trades = append(trades, Trade{
-			Timestamp: float64(time.Now().UnixNano()),
-			Amount:    amount,
-			Price:     price,
-		})
-	}
-	for _, newTrade := range tu.Trades {
-		parseTrade(newTrade)
-	}
-	return trades
-}
-
-// writeCheckpoint writes the checkpoint item to the database
-func (dbw *DatabaseWriter) writeCheckpoint() {
-	delta := Delta{
-		Timestamp: float64(time.Now().UnixNano()),
-		Price:     0, // price zero indicates the checkpoint
-		Amount:    0,
-	}
-	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now())
-	dbw.writeDeltas(delta)
-}
-
-
-// extractDeltas serializes the OrderBookDelta update to a list of Items
-func (ob *OrderBook) extractDeltas(obd common.OrderBookDelta) []Delta {
-	var deltas []Delta
-
-	parseOrders := func(newOrder common.PublicOrder, isAsk bool) {
-		amount, err1 := strconv.ParseFloat(newOrder.Amount, 64)
-		price, err2 := strconv.ParseFloat(newOrder.Price, 64)
-		if err1 != nil || err2 != nil {
-			log.Print("delta string to float conversion failed", err1, err2)
-			return
-		}
-		if isAsk {
-			amount *= -1
-		}
-		deltas = append(deltas, Delta{
-			Timestamp: float64(time.Now().UnixNano()),
-			Price:     price,
-			Amount:    amount,
-		})
-	}
-
-	parseRemovals := func(removePrice string) {
-		amount := 0.0 // remove
-		price, err2 := strconv.ParseFloat(removePrice, 64)
-		if err2 != nil {
-			log.Print("delta string to float conversion failed", err2)
-			return
-		}
-		deltas = append(deltas, Delta{
-			Timestamp: float64(time.Now().UnixNano()),
-			Price:     price,
-			Amount:    amount,
-		})
-	}
-
-	for _, newOrder := range obd.Asks.Set {
-		parseOrders(newOrder, true)
-	}
-	for _, newOrder := range obd.Bids.Set {
-		parseOrders(newOrder, false)
-	}
-
-	for _, removePrice := range obd.Asks.Remove {
-		parseRemovals(removePrice)
-	}
-	for _, removePrice := range obd.Bids.Remove {
-		parseRemovals(removePrice)
-	}
-	return deltas
-}
-
-func (ob *OrderBook) ApplyTrades(update common.TradesUpdate) {
-	trades := ob.extractTrades(update)
-	ob.intervalTrades = append(ob.intervalTrades, trades...)
-}
-
-func (ob *OrderBook) clearSnapshotData() {
-	ob.intervalTrades = nil
-	ob.intervalDeltas = nil
 }

@@ -4,17 +4,12 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"fmt"
 	"math/rand"
-	"sort"
-	"strconv"
 	"time"
 
 	"github.com/juju/errors"
 
 	"code.cryptowat.ch/clock"
 	"code.cryptowat.ch/cw-sdk-go/common"
-	"database/sql"
-
-	_ "github.com/lib/pq"
 )
 
 const maxDeltasCacheSize = 50
@@ -24,27 +19,17 @@ type getSnapshotResult struct {
 	err      error
 }
 
-type IntervalData struct {
-	snapshot       common.OrderBookSnapshot
-	intervalTrades []Trade
-	intervalDeltas []Delta
-}
-
 // OrderBookUpdater maintains the up-to-date orderbook by applying live updates
 // (which are typically fed to it from the StreamClient updates)
 type OrderBookUpdater struct {
 	params OrderBookUpdaterParams
 
-	cassandraDeltasChan   chan common.CassandraDelta
-	cassandraTradesChan   chan common.CassandraTrade
 	tradesChan            chan common.TradesUpdate
 	deltasChan            chan common.OrderBookDelta
 	snapshotsChan         chan common.OrderBookSnapshot
 	getSnapshotResultChan chan getSnapshotResult
 	stopChan              chan struct{}
 	addUpdateCB           chan OnUpdateCB
-
-	takeSnapshotChan chan IntervalData
 
 	curOrderBook      *OrderBook
 	curDatabaseWriter *DatabaseWriter
@@ -78,7 +63,10 @@ type OrderBookUpdater struct {
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
 type OrderBookUpdaterParams struct {
-	MarketDescriptor rest.MarketDescr
+
+	MarketDescriptor   rest.MarketDescr
+	ExchangeDescriptor rest.ExchangeDescr
+	PairDescriptor     rest.PairDescr
 	StartTime        time.Time
 	EndTime          time.Time
 
@@ -110,7 +98,7 @@ type OrderBookUpdaterParams struct {
 	// internalEvent is called right after processing an event in eventLoop.
 	// It's a no-op for prod.
 	internalEvent func(ie internalEvent)
-	PostgresDB    *sql.DB
+
 }
 
 // NewOrderBookUpdater creates a new orderbook updater with the provided
@@ -118,7 +106,7 @@ type OrderBookUpdaterParams struct {
 func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 	var databaseWriter *DatabaseWriter
 	if params.WriteToDB && params.OrderbookTableName != "" && params.TradesTableName != "" {
-		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, params.OrderbookTableName, params.TradesTableName, "", params.Brokers)
+		databaseWriter = NewDatabaseWriter(&params.MarketDescriptor, &params.ExchangeDescriptor, &params.PairDescriptor, params.OrderbookTableName, params.TradesTableName)
 	}
 	obu := &OrderBookUpdater{
 		params: *params,
@@ -128,17 +116,12 @@ func NewOrderBookUpdater(params *OrderBookUpdaterParams) *OrderBookUpdater {
 			lastCheckpoint:   time.Now(),
 		},
 
-		cassandraDeltasChan:   make(chan common.CassandraDelta, 1),
-		cassandraTradesChan:   make(chan common.CassandraTrade, 1),
 		deltasChan:            make(chan common.OrderBookDelta, 1),
 		tradesChan:            make(chan common.TradesUpdate, 1),
 		snapshotsChan:         make(chan common.OrderBookSnapshot, 1),
 		getSnapshotResultChan: make(chan getSnapshotResult, 1),
 		stopChan:              make(chan struct{}),
 		addUpdateCB:           make(chan OnUpdateCB, 1),
-
-		takeSnapshotChan: make(chan IntervalData, 1),
-
 
 		nextSnapshot:      params.StartTime,
 		curDatabaseWriter: databaseWriter,
@@ -457,13 +440,13 @@ func (obu *OrderBookUpdater) eventLoop() {
 
 		case delta := <-obu.deltasChan:
 			obu.UpdateTimer(delta.Timestamp)
-			_ = obu.curOrderBook.ApplyDeltaOpt(delta, true, nil)
+			_ = obu.curOrderBook.ApplyDeltaOpt(delta, true, obu.curDatabaseWriter)
 			obu.params.internalEvent(internalEventDeltaHandled)
 
 		case trades := <-obu.tradesChan:
 			obu.UpdateTimer(trades.Timestamp)
-			obu.curOrderBook.ApplyTrades(trades)
-			//obu.curDatabaseWriter.writeTrades(trades)
+			//obu.curOrderBook.ApplyTrades(trades)
+			obu.curDatabaseWriter.writeTrades(trades)
 			obu.params.internalEvent(internalEventTradeHandled)
 
 		case shapshot := <-obu.snapshotsChan:
@@ -507,156 +490,12 @@ func (obu *OrderBookUpdater) eventLoop() {
 	}
 }
 
-func (obu *OrderBookUpdater) ReceiveCassandraDelta(delta common.CassandraDelta) {
-	obu.cassandraDeltasChan <- delta
-}
 
-func (obu *OrderBookUpdater) ReceiveCassandraTrade(trade common.CassandraTrade) {
-	obu.cassandraTradesChan <- trade
-}
 
 func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
-	if ts.Before(obu.params.StartTime) || ts.After(obu.params.EndTime) {
-		//fmt.Println("skipping", ts)
-		return
-	}
-	obu.currentTimestamp = ts
 
-	for ; obu.nextSnapshot.Before(obu.currentTimestamp); obu.nextSnapshot = obu.nextSnapshot.Add(time.Minute) {
-		obu.takeSnapshot(obu.nextSnapshot)
-	}
 }
 
-func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
-	defer obu.curOrderBook.clearSnapshotData()
-
-	if obu.curOrderBook.GetSeqNum() < 100 {
-		fmt.Println("skipping", obu.curOrderBook.GetSeqNum())
-		return
-	}
-
-	tradeVolume := func(trades []Trade) float64 {
-		sum := 0.0
-		for _, trade := range trades {
-			sum += trade.Amount
-		}
-		return sum
-	}(obu.curOrderBook.intervalTrades)
-
-	orderbookActivity := len(obu.curOrderBook.intervalDeltas)
-	tradeCount := len(obu.curOrderBook.intervalTrades)
-
-
-	bids := obu.curOrderBook.snapshot.Bids
-	asks := obu.curOrderBook.snapshot.Asks
-
-
-	sort.Sort(common.PublicOrdersByPrice(asks))
-	sort.Sort(sort.Reverse(common.PublicOrdersByPrice(bids)))
-
-
-	bidPrice, _ := strconv.ParseFloat(bids[0].Price, 64)
-	askPrice, _ := strconv.ParseFloat(asks[0].Price, 64)
-
-	mid := (bidPrice + askPrice) / 2
-
-	availableVolumeRange := func(mid float64, spread float64) (float64, float64) {
-		sumBids := 0.0
-		for _, order := range bids {
-			amount, _ := strconv.ParseFloat(order.Amount, 64)
-			price, _ := strconv.ParseFloat(order.Price, 64)
-			if price < mid*(1-spread) {
-				break
-			}
-			sumBids += amount
-		}
-
-		sumAsks := 0.0
-		for _, order := range asks {
-			amount, _ := strconv.ParseFloat(order.Amount, 64)
-			price, _ := strconv.ParseFloat(order.Price, 64)
-			if price > mid*(1+spread) {
-				break
-			}
-			sumAsks += amount
-		}
-
-		return sumBids, sumAsks
-	}
-
-	bidsVolume10, asksVolume10 := availableVolumeRange(mid, 0.10)
-	bidsVolume1, asksVolume1 := availableVolumeRange(mid, 0.01)
-	return
-	if bidPrice>askPrice{
-		fmt.Println("taking snapshot", snapshotTime,
-			common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
-			common.FixPair(obu.params.MarketDescriptor.Pair),
-			tradeCount,
-			tradeVolume,
-			orderbookActivity,
-			bidsVolume10,
-			asksVolume10,
-			bidsVolume1,
-			asksVolume1,
-			bidPrice,
-			askPrice,)
-	}
-
-    return
-	res, err := obu.params.PostgresDB.Exec(`
-					INSERT INTO "OrderbookFeatures"
-								("Time",
-								 "Exchange",
-								 "Symbol",
-								 "TradeCount",
-								 "TradeVolume",
-								 "OrderbookActivity",
-								 "BidsVolume10",
-								 "AsksVolume10",
-								 "BidsVolume1",
-								 "AsksVolume1",
-								 "BidPrice",
-                               "AskPrice")
-							VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
-							ON CONFLICT ("Time","Exchange","Symbol") DO UPDATE 
-  							SET "TradeCount" = excluded."TradeCount", 
-      							"TradeVolume" = excluded."TradeVolume",
-      							"OrderbookActivity" = excluded."OrderbookActivity",
-      							"BidsVolume10" = excluded."BidsVolume10",
-      							"AsksVolume10" = excluded."AsksVolume10",
-      							"BidsVolume1" = excluded."BidsVolume1",
-      							"AsksVolume1" = excluded."AsksVolume1",
-      							"BidPrice" = excluded."BidPrice",
-      							"AskPrice" = excluded."AskPrice";`,
-							snapshotTime,
-							common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
-							common.FixPair(obu.params.MarketDescriptor.Pair),
-							tradeCount,
-							tradeVolume,
-							orderbookActivity,
-							bidsVolume10,
-							asksVolume10,
-							bidsVolume1,
-							asksVolume1,
-							bidPrice,
-							askPrice,
-	)
-	if err != nil{
-		fmt.Println(res, err)
-		fmt.Println("failed snapshot", snapshotTime,
-			common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
-			common.FixPair(obu.params.MarketDescriptor.Pair),
-			tradeCount,
-			tradeVolume,
-			orderbookActivity,
-			bidsVolume10,
-			asksVolume10,
-			bidsVolume1,
-			asksVolume1,
-			bidPrice,
-			askPrice,)
-	}
-}
 
 type deltasCheckResult struct {
 	// nextDeltaApply indicates the next delta number which should be applied to

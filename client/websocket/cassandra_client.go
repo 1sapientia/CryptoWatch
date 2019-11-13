@@ -244,7 +244,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
 			break
 		}
-		//fmt.Println(date)
+		fmt.Println(date)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
@@ -323,11 +323,10 @@ func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Tim
 	}else{
 		if price < 0{
 			delta.Asks.Remove = append(delta.Asks.Remove, p)
-
+			delta.Bids.Remove = append(delta.Bids.Remove, p)
 		} else {
 			delta.Bids.Remove = append(delta.Bids.Remove, p)
-
-
+			delta.Asks.Remove = append(delta.Asks.Remove, p)
 		}
 	}
 	delta.Timestamp=ts

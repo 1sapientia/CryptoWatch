@@ -6,7 +6,6 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"code.cryptowat.ch/cw-sdk-go/config"
 	"code.cryptowat.ch/cw-sdk-go/orderbooks"
-	"database/sql"
 	"fmt"
 	flag "github.com/spf13/pflag"
 	"log"
@@ -62,11 +61,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	connStr := ""
-	postgresDB, err := sql.Open("postgres", connStr)
-	if err != nil {
-		//log.Fatal(err)
-	}
 
 	restclient := rest.NewCWRESTClient(nil)
 
@@ -101,14 +95,13 @@ func main() {
 			})
 
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
-			WriteToDB:          false,
+			WriteToDB:          true,
 			OrderbookTableName: orderbooksTopic,
 			TradesTableName:    tradesTopic,
 			Brokers:            strings.Split(brokers, ","),
 			MarketDescriptor:   market,
 			StartTime:          startTime,
 			EndTime:            EndTime,
-			PostgresDB: 		postgresDB,
 			//SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 			//	market.Exchange, market.Pair, &rest.CWRESTClientParams{
 			//		APIURL: cfg.APIURL,
