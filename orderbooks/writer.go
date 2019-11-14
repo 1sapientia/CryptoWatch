@@ -7,7 +7,6 @@ import (
 	"github.com/gocql/gocql"
 	"log"
 	"math"
-	"strconv"
 	"time"
 )
 
@@ -15,9 +14,9 @@ const numWorkers = 10
 
 type Item struct {
 	Table     string
-	Timestamp float64 //market id
-	Price     float64 //timestamp (ms)
-	Amount    float64 //amount (positive bid, negative ask)
+	Timestamp int64
+	Price     string
+	Amount    string //(positive bid, negative ask)
 }
 
 type DatabaseWriter struct {
@@ -78,9 +77,9 @@ func (dbw *DatabaseWriter) writer() {
 func (dbw *DatabaseWriter) writeCheckpoint() {
 	items := []Item{{
 		Table:     dbw.orderbookTableName,
-		Timestamp: float64(time.Now().UnixNano()),
-		Price:     0, // price zero indicates the checkpoint
-		Amount:    0,
+		Timestamp: time.Now().UnixNano(),
+		Price:     "C",
+		Amount:    "0",
 	}}
 	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now())
 	dbw.submitItems(items)
@@ -94,22 +93,21 @@ func (dbw *DatabaseWriter) writeDelta(obd common.OrderBookDelta) {
 
 // writeDelta transforms serializes the TradesUpdate and concurrently writes it to the trades table
 func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
-	//items := dbw.extractTrades(tu)
-	//dbw.submitItems(items)
+	items := dbw.extractTrades(tu)
+	dbw.submitItems(items)
 }
 
 // submitItems appends the requests to the queue which is then potentially sent to the writer channel
 func (dbw *DatabaseWriter) submitItems(items []Item) {
-	//fmt.Print("no print just yet", len(items))
 	return
 	dbw.writeQueue = append(dbw.writeQueue, items...)
 	queueLength := len(dbw.writeQueue)
-	if queueLength > 1000 {
+	if queueLength > 100 {
 		// dont block if chan is full. the queued requests will be processed later
 		select {
-		case dbw.writeChan <- dbw.writeQueue[:1000]:
+		case dbw.writeChan <- dbw.writeQueue[:100]:
 			{
-				dbw.writeQueue = dbw.writeQueue[1000:]
+				dbw.writeQueue = dbw.writeQueue[100:]
 			}
 		default:
 		}
@@ -127,10 +125,10 @@ func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
             `,
 			dbw.ExchangeDescriptor.ID,
 			dbw.PairDescriptor.ID,
-			time.Unix(0, int64(item.Timestamp)).Format("2006-01-02"),
-			time.Unix(0, int64(item.Timestamp)),
-			float32(item.Price),
-			float32(item.Amount)).Exec(); err != nil {
+			time.Unix(0, item.Timestamp).Format("2006-01-02"),
+			item.Timestamp,
+			item.Price,
+			item.Amount).Exec(); err != nil {
 			fmt.Println("put item throttled with error. retry pending", err)
 
 		} else {
@@ -146,19 +144,12 @@ func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 // extractTrades serializes the TradesUpdate to a list of Items
 func (dbw *DatabaseWriter) extractTrades(tu common.TradesUpdate) []Item {
 	var trades []Item
-
 	parseTrade := func(newTrade common.PublicTrade) {
-		amount, err1 := strconv.ParseFloat(newTrade.Amount, 64)
-		price, err2 := strconv.ParseFloat(newTrade.Price, 64)
-		if err1 != nil || err2 != nil {
-			log.Print("trade string to float conversion failed", err1, err2)
-			return
-		}
 		trades = append(trades, Item{
 			Table:     dbw.tradesTableName,
-			Timestamp: float64(time.Now().UnixNano()),
-			Amount:    amount,
-			Price:     price,
+			Timestamp: time.Now().UnixNano(),
+			Amount:    newTrade.Amount,
+			Price:     newTrade.Price,
 		})
 	}
 	for _, newTrade := range tu.Trades {
@@ -170,35 +161,25 @@ func (dbw *DatabaseWriter) extractTrades(tu common.TradesUpdate) []Item {
 // extractDeltas serializes the OrderBookDelta update to a list of Items
 func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 	var deltas []Item
-	ts := float64(time.Now().UnixNano())
+	ts := time.Now().UnixNano()
 	parseRemovals := func(removePrice string, isAsk bool) {
-		amount := 0.0 // remove
-		price, err2 := strconv.ParseFloat(removePrice, 64)
-		if err2 != nil {
-			log.Print("delta string to float conversion failed", err2)
-			return
-		}
+		amount := "0" // remove
 		if isAsk {
-			price *= -1
+			amount = "-"+amount
 		}
 		deltas = append(deltas, Item{
 			Table:     dbw.orderbookTableName,
 			Timestamp: ts,
-			Price:     price,
+			Price:     removePrice,
 			Amount:    amount,
 		})
 	}
 
 	parseOrders := func(newOrder common.PublicOrder, isAsk bool) {
-		amount, err1 := strconv.ParseFloat(newOrder.Amount, 64)
-		price, err2 := strconv.ParseFloat(newOrder.Price, 64)
-		if err1 != nil || err2 != nil {
-			log.Print("delta string to float conversion failed", err1, err2)
-			return
-		}
+		price := newOrder.Price
+		amount := newOrder.Amount
 		if isAsk {
-			amount *= -1
-			price *= -1
+			amount = "-"+amount
 		}
 		deltas = append(deltas, Item{
 			Table:     dbw.orderbookTableName,

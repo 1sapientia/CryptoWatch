@@ -256,7 +256,18 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 			sc.params.EndTime).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
+
 			if price == 0{
+				update = common.OrderBookDelta{
+					Timestamp: ts,
+					SeqNum: 999999999,
+				}
+				u := update
+				submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
+					market: common.Market{ID: common.MarketID(marketId)},
+					update: common.MarketUpdate{OrderBookDelta:&u},
+					listeners: listeners,
+				}
 				continue
 			}
 			if ts.Sub(startTime).Milliseconds()>=1{
@@ -308,8 +319,8 @@ func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Tim
 	if price==183.93{
 		//fmt.Println(ts, amount)
 	}
-	p := fmt.Sprintf("%.5g",  math.Abs(float64(price)))
-	a := fmt.Sprintf("%.5g", math.Abs(float64(amount)))
+	p := fmt.Sprintf("%.8f",  math.Abs(float64(price)))
+	a := fmt.Sprintf("%.8f", math.Abs(float64(amount)))
 	if amount > 0{
 		delta.Bids.Set = append(delta.Bids.Set, common.PublicOrder{
 			Price:  p,
