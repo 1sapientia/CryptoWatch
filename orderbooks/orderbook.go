@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/juju/errors"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -48,6 +49,41 @@ func (ob *OrderBook) ApplyDelta(obd common.OrderBookDelta, writer *DatabaseWrite
 	return ob.ApplyDeltaOpt(obd, false, writer)
 }
 
+func Filter(vs []string, f func(string) bool) []string {
+	vsf := make([]string, 0)
+	for _, v := range vs {
+		if f(v) {
+			vsf = append(vsf, v)
+		}
+	}
+	return vsf
+}
+
+func (ob *OrderBook) applyObdRemovalsSide(obd *common.OrderBookDelta){
+	bidPrice, _ := strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64);
+	askPrice, _ := strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64);
+
+	//fmt.Println(bidPrice, askPrice, obd.Asks.Remove)
+
+	obd.Bids.Remove = Filter(obd.Bids.Remove, func(s string) bool {
+		price, _ := strconv.ParseFloat(s, 64);
+		if price>bidPrice{
+			//fmt.Println("removing bid removal", price)
+			return false
+		}
+		return true
+	})
+
+	obd.Asks.Remove = Filter(obd.Asks.Remove, func(s string) bool {
+		price, _ := strconv.ParseFloat(s, 64);
+		if price<askPrice{
+			//fmt.Println("removing ask removal", price)
+			return false
+		}
+		return true
+	})
+}
+
 // ApplyDeltaOpt applies the given delta (received from the wire) to the
 // current orderbook. If ignoreSeqNum is true, applies the delta even if the
 // sequence number isn't exactly the old one incremented by 1.
@@ -55,6 +91,10 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 	// Refuse to apply delta of there is a gap in sequence numbers
 	if !ignoreSeqNum && obd.SeqNum-1 != ob.snapshot.SeqNum {
 		return ErrSeqNumMismatch
+	}
+
+	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0{
+		ob.applyObdRemovalsSide(&obd)
 	}
 
 	if writer != nil {
