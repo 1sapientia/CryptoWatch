@@ -247,7 +247,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
-                                WHERE exchange=? and pair=? and date = ? and ts > ? and ts < ? order by ts`, sc.params.OrderbookTableName),
+                                WHERE exchange=? and pair=? and date = ? and ts >= ? and ts < ? order by ts`, sc.params.OrderbookTableName),
 			common.FixExchangeName(exchange),
 			common.FixPair(pair),
 			date.Format("2006-01-02"),
@@ -369,7 +369,7 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
-                                WHERE exchange=? and pair=? and date = ? and ts > ? and ts < ? order by ts`, sc.params.TradesTableName),
+                                WHERE exchange=? and pair=? and date = ? and ts >= ? and ts < ? order by ts`, sc.params.TradesTableName),
 			common.FixExchangeName(exchange),
 			common.FixPair(pair),
 			date.Format("2006-01-02"),

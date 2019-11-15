@@ -99,8 +99,6 @@ func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 
 // submitItems appends the requests to the queue which is then potentially sent to the writer channel
 func (dbw *DatabaseWriter) submitItems(items []Item) {
-	fmt.Println("submittinf", items)
-	return
 	dbw.writeQueue = append(dbw.writeQueue, items...)
 	queueLength := len(dbw.writeQueue)
 	if queueLength > 100 {

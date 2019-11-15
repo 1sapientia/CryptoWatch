@@ -171,13 +171,20 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 				a, _ := strconv.ParseFloat(ask.Price, 64)
 				if a<bidPrice{
 					obd.Asks.Remove = append(obd.Asks.Remove, ask.Price)
-					fmt.Println("removing bid", ask.Price)
+					fmt.Println("removing ask", ask.Price)
 				}else{
 					break
 				}
 			}
 			ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
 			ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
+
+			bidPrice, _ := strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64)
+			askPrice, _ := strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64)
+			if bidPrice>askPrice{
+				fmt.Println("negative again", ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, obd)
+			}
+
 		}
 	}
 
