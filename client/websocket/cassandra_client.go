@@ -254,7 +254,27 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 
 		for iter.Scan(&ts, &price, &amount) {
 			if price == "C"{
-				fmt.Println(ts, "checkpoint")
+				update = common.OrderBookDelta{
+					Timestamp: time.Unix(0, ts),
+					SeqNum: 999999999,
+				}
+				u := update
+				submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
+					market: common.Market{ID: common.MarketID(marketId)},
+					update: common.MarketUpdate{OrderBookDelta:&u},
+					listeners: listeners,
+				}
+				update = common.OrderBookDelta{
+					Timestamp: time.Time{},
+					Bids:      common.OrderDeltas{
+						Set:    []common.PublicOrder{},
+						Remove: []string{},
+					},
+					Asks:      common.OrderDeltas{
+						Set:    []common.PublicOrder{},
+						Remove: []string{},
+					},
+				}
 				continue
 			}
 			if ts-startTime.UnixNano()>=1{
@@ -332,7 +352,7 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange rest.E
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
-                                WHERE exchange=? and pair=? and date = ? and ts > ? and ts < ? order by ts`, sc.params.TradesTableName),
+                                WHERE exchange=? and pair=? and date = ? and ts >= ? and ts < ? order by ts`, sc.params.TradesTableName),
 			exchange.ID,
 			pair.ID,
 			date.Format("2006-01-02"),

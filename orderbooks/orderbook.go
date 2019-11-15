@@ -63,6 +63,12 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return ErrSeqNumMismatch
 	}
 
+	if obd.SeqNum==999999999{
+		ob.snapshot = common.OrderBookSnapshot{}
+		fmt.Println("checkpoint")
+		return nil
+	}
+
 	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 00:00:00.000")
 	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-10 23:00:00.000")
 
