@@ -7,7 +7,6 @@ import (
 	"github.com/gocql/gocql"
 	"log"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -204,7 +203,7 @@ func (sc *CassandraClient) Connect() (err error) {
 		sc.waitgroup.Wait()
 		_ = sc.Close()
 		log.Print("Cassandra Querying Done")
-		os.Exit(0)
+		//os.Exit(0)
 	}()
 
 	return nil
@@ -255,7 +254,6 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 			sc.params.EndTime).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
-
 			if price == 0{
 				update = common.OrderBookDelta{
 					Timestamp: ts,
@@ -322,6 +320,7 @@ func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Tim
 
 	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:03:41.977")
 	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:04:00.977")
+
 
 	if ts.Before(EndTime)&&ts.After(startTime){
 		//fmt.Println(ts, price, amount)
