@@ -24,8 +24,8 @@ const (
 
 func main() {
 
-	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 00:00:00.000")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-11 00:00:00.000")
+	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-11-03 00:00:00.000")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-11-04 00:00:00.000")
 
 	if err != nil {
 		log.Print(err)
@@ -168,9 +168,6 @@ func main() {
 			}
 		},
 	)
-
-	fmt.Print("[")
-
 
 	// Finally, connect.
 	if err := c.Connect(); err != nil {

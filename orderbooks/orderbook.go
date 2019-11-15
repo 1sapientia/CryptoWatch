@@ -59,6 +59,16 @@ func Filter(vs []string, f func(string) bool) []string {
 	return vsf
 }
 
+func FilterSets(vs []common.PublicOrder, f func(common.PublicOrder) bool) []common.PublicOrder {
+	vsf := make([]common.PublicOrder, 0)
+	for _, v := range vs {
+		if f(v) {
+			vsf = append(vsf, v)
+		}
+	}
+	return vsf
+}
+
 func (ob *OrderBook) applyObdRemovalsSide(obd *common.OrderBookDelta){
 	bidPrice, _ := strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64);
 	askPrice, _ := strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64);
@@ -71,12 +81,12 @@ func (ob *OrderBook) applyObdRemovalsSide(obd *common.OrderBookDelta){
 				p, _ := strconv.ParseFloat(bid.Price, 64)
 				if newPrice<=p{
 					obd.Bids.Remove = append(obd.Bids.Remove, bid.Price)
-					fmt.Println(newAsk.Price, "removing bid", bid.Price)
+					//fmt.Println(newAsk.Price, "removing bid", bid.Price)
 				}else{
 					break
 				}
 			}
-			fmt.Println()
+			//fmt.Println()
 		}
 	}
 
@@ -87,17 +97,14 @@ func (ob *OrderBook) applyObdRemovalsSide(obd *common.OrderBookDelta){
 				p, _ := strconv.ParseFloat(ask.Price, 64)
 				if newPrice>=p{
 					obd.Asks.Remove = append(obd.Asks.Remove, ask.Price)
-					fmt.Println(newBid.Price, "removing ask", ask.Price)
+					//fmt.Println(newBid.Price, "removing ask", ask.Price)
 				}else{
 					break
 				}
 			}
-			fmt.Println()
+			//fmt.Println()
 		}
 	}
-
-
-
 
 	obd.Bids.Remove = Filter(obd.Bids.Remove, func(s string) bool {
 		price, _ := strconv.ParseFloat(s, 64);
@@ -118,6 +125,7 @@ func (ob *OrderBook) applyObdRemovalsSide(obd *common.OrderBookDelta){
 	})
 
 
+
 }
 
 // ApplyDeltaOpt applies the given delta (received from the wire) to the
@@ -131,7 +139,8 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 	if obd.SeqNum==999999999{
 		ob.snapshot = common.OrderBookSnapshot{}
-		fmt.Println("empty")
+		ob.SetSnapshotCheckpoint(writer)
+		//fmt.Println(obd.Timestamp, "empty")
 		return nil
 	}
 
@@ -139,16 +148,43 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		ob.applyObdRemovalsSide(&obd)
 	}
 
+	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
+	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
+
+	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0{
+		bidPrice, _ := strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64)
+		askPrice, _ := strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64)
+		if bidPrice>askPrice{
+			fmt.Println("negative", ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, obd)
+
+			for _, bid := range(ob.snapshot.Bids){
+				b, _ := strconv.ParseFloat(bid.Price, 64)
+				if b>askPrice{
+					obd.Bids.Remove = append(obd.Bids.Remove, bid.Price)
+					fmt.Println("removing bid", bid.Price)
+				}else{
+					break
+				}
+			}
+
+			for _, ask := range(ob.snapshot.Asks){
+				a, _ := strconv.ParseFloat(ask.Price, 64)
+				if a<bidPrice{
+					obd.Asks.Remove = append(obd.Asks.Remove, ask.Price)
+					fmt.Println("removing bid", ask.Price)
+				}else{
+					break
+				}
+			}
+			ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
+			ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
+		}
+	}
+
 	if writer != nil {
 		writer.writeDelta(obd)
 	}
 
-	ob.snapshot.Bids = ordersWithDelta(ob.snapshot.Bids, &obd.Bids, true)
-	ob.snapshot.Asks = ordersWithDelta(ob.snapshot.Asks, &obd.Asks, false)
-
-	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0 && ob.snapshot.Asks[0].Price<ob.snapshot.Bids[0].Price{
-		fmt.Println("negative", ob.snapshot.Asks[0].Price, ob.snapshot.Bids[0].Price , obd.Timestamp, obd)
-	}
 
 	ob.snapshot.SeqNum = obd.SeqNum
 
@@ -231,15 +267,21 @@ func ordersWithDelta(
 	for _, order := range setMap {
 		if _, ok := removeMap[order.Price]; ok && reverse==true{
 			// Need to remove this order, so don't add it
-			fmt.Println(order.Price)
+			//fmt.Println(order.Price)
 			toRemove[order.Price] = true
 			continue
 		}
 		newOrders = append(newOrders, order)
 	}
 
-
-
+	//fmt.Println(deltas.Set)
+	deltas.Set = FilterSets(deltas.Set, func(o common.PublicOrder) bool {
+		if _, ok := toRemove[o.Price]; ok {
+			//fmt.Println("removing", o.Price, reverse)
+			return false
+		}
+		return true
+	})
 
 	// Sort results
 	if !reverse {

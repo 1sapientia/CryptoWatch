@@ -99,6 +99,7 @@ func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 
 // submitItems appends the requests to the queue which is then potentially sent to the writer channel
 func (dbw *DatabaseWriter) submitItems(items []Item) {
+	fmt.Println("submittinf", items)
 	return
 	dbw.writeQueue = append(dbw.writeQueue, items...)
 	queueLength := len(dbw.writeQueue)
@@ -147,7 +148,7 @@ func (dbw *DatabaseWriter) extractTrades(tu common.TradesUpdate) []Item {
 	parseTrade := func(newTrade common.PublicTrade) {
 		trades = append(trades, Item{
 			Table:     dbw.tradesTableName,
-			Timestamp: time.Now().UnixNano(),
+			Timestamp: tu.Timestamp.UnixNano(),
 			Amount:    newTrade.Amount,
 			Price:     newTrade.Price,
 		})
@@ -161,16 +162,18 @@ func (dbw *DatabaseWriter) extractTrades(tu common.TradesUpdate) []Item {
 // extractDeltas serializes the OrderBookDelta update to a list of Items
 func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 	var deltas []Item
-	ts := time.Now().UnixNano()
+	ts := obd.Timestamp.UnixNano()
 	parseRemovals := func(removePrice string, isAsk bool) {
+		price := removePrice
 		amount := "0" // remove
 		if isAsk {
 			amount = "-"+amount
+			price = "-"+price
 		}
 		deltas = append(deltas, Item{
 			Table:     dbw.orderbookTableName,
 			Timestamp: ts,
-			Price:     removePrice,
+			Price:     price,
 			Amount:    amount,
 		})
 	}
@@ -180,6 +183,7 @@ func (dbw *DatabaseWriter) extractDeltas(obd common.OrderBookDelta) []Item {
 		amount := newOrder.Amount
 		if isAsk {
 			amount = "-"+amount
+			price = "-"+price
 		}
 		deltas = append(deltas, Item{
 			Table:     dbw.orderbookTableName,

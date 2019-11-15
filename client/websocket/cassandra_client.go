@@ -203,8 +203,7 @@ func (sc *CassandraClient) Connect() (err error) {
 	go func() {
 		sc.waitgroup.Wait()
 		_ = sc.Close()
-		//log.Print("Cassandra Querying Done")
-		fmt.Print("]")
+		log.Print("Cassandra Querying Done")
 		os.Exit(0)
 	}()
 
@@ -244,7 +243,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
 			break
 		}
-		fmt.Println(date)
+		fmt.Println("id:"+marketId, date)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
@@ -267,6 +266,17 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 					market: common.Market{ID: common.MarketID(marketId)},
 					update: common.MarketUpdate{OrderBookDelta:&u},
 					listeners: listeners,
+				}
+				update = common.OrderBookDelta{
+					Timestamp: time.Time{},
+					Bids:      common.OrderDeltas{
+						Set:    []common.PublicOrder{},
+						Remove: []string{},
+					},
+					Asks:      common.OrderDeltas{
+						Set:    []common.PublicOrder{},
+						Remove: []string{},
+					},
 				}
 				continue
 			}
@@ -305,6 +315,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		}
 		date = date.Add(time.Hour * 24)
 	}
+	fmt.Println("id:"+marketId, "cassandra done")
 }
 
 func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Time, price float32, amount float32) {
@@ -386,8 +397,8 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange string
 }
 
 func tradesUpdateFromCassandra(ts time.Time, price float32, amount float32) common.TradesUpdate {
-	p := fmt.Sprintf("%.5g", price)
-	a := fmt.Sprintf("%.5g", amount)
+	p := fmt.Sprintf("%.8f",  float64(price))
+	a := fmt.Sprintf("%.8f", float64(amount))
 	return common.TradesUpdate{
 		Timestamp:ts,
 		Trades:[]common.PublicTrade{{
