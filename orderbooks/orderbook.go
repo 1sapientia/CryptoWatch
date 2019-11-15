@@ -139,7 +139,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 	if obd.SeqNum==999999999{
 		ob.snapshot = common.OrderBookSnapshot{}
-		ob.SetSnapshotCheckpoint(writer)
+		ob.SetSnapshotCheckpoint(writer, obd.Timestamp)
 		//fmt.Println(obd.Timestamp, "empty")
 		return nil
 	}
@@ -209,9 +209,9 @@ func (ob *OrderBook) ApplySnapshot(snapshot common.OrderBookSnapshot, writer *Da
 }
 
 // SetSnapshotCheckpoint writes the checkpoint item to the database if the writer is not nil
-func (ob *OrderBook) SetSnapshotCheckpoint(writer *DatabaseWriter) {
+func (ob *OrderBook) SetSnapshotCheckpoint(writer *DatabaseWriter, ts time.Time) {
 	if writer != nil {
-		writer.writeCheckpoint()
+		writer.writeCheckpoint(ts)
 	}
 }
 

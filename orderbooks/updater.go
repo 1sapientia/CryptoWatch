@@ -285,7 +285,7 @@ func (obu *OrderBookUpdater) receiveSnapshotInternal(snapshot common.OrderBookSn
 			marketDescriptor: obu.params.MarketDescriptor,
 			lastCheckpoint:   time.Now(),
 		}
-		obu.curOrderBook.SetSnapshotCheckpoint(obu.curDatabaseWriter)
+		obu.curOrderBook.SetSnapshotCheckpoint(obu.curDatabaseWriter, time.Now())
 	}
 	//apply the snapshot by transforming it to deltas which are in turn applied and saved to the db
 	obu.curOrderBook.ApplySnapshot(snapshot, obu.curDatabaseWriter)

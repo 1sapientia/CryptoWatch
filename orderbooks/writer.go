@@ -74,14 +74,14 @@ func (dbw *DatabaseWriter) writer() {
 }
 
 // writeCheckpoint writes the checkpoint item to the database
-func (dbw *DatabaseWriter) writeCheckpoint() {
+func (dbw *DatabaseWriter) writeCheckpoint(ts time.Time) {
 	items := []Item{{
 		Table:     dbw.orderbookTableName,
-		Timestamp: time.Now().UnixNano(),
+		Timestamp: ts.UnixNano(),
 		Price:     "C",
 		Amount:    "0",
 	}}
-	fmt.Println("writing checkpoint", dbw.MarketDescriptor, time.Now())
+	fmt.Println("writing checkpoint", dbw.MarketDescriptor, ts)
 	dbw.submitItems(items)
 }
 
@@ -131,7 +131,6 @@ func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 			fmt.Println("put item throttled with error. retry pending", err)
 
 		} else {
-			print("written")
 			return
 		}
 
