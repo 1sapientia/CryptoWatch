@@ -104,9 +104,9 @@ func (dbw *DatabaseWriter) submitItems(items []Item) {
 	if queueLength > 100 {
 		// dont block if chan is full. the queued requests will be processed later
 		select {
-		case dbw.writeChan <- dbw.writeQueue[:100]:
+		case dbw.writeChan <- dbw.writeQueue:
 			{
-				dbw.writeQueue = dbw.writeQueue[100:]
+				dbw.writeQueue = nil
 			}
 		default:
 		}
@@ -131,6 +131,7 @@ func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 			fmt.Println("put item throttled with error. retry pending", err)
 
 		} else {
+			fmt.Println(time.Unix(0, item.Timestamp))
 			return
 		}
 
