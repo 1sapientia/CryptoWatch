@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const numWorkers = 10
+const numWorkers = 1
 
 type Item struct {
 	Table     string
@@ -131,6 +131,7 @@ func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 			fmt.Println("put item throttled with error. retry pending", err)
 
 		} else {
+			print("written")
 			return
 		}
 

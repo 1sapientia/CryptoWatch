@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -94,12 +93,20 @@ func main() {
 				Resource: fmt.Sprintf("markets:%d:trades", market.ID),
 			})
 
+		exchange, err1 := restclient.GetExchangeDescr(market.Exchange)
+		pair, err2 := restclient.GetPairDescr(market.Pair)
+		if err1 != nil ||  err2 != nil {
+			log.Printf("failed to get exchange/pair %s/%s: %s", market.Exchange, market.Pair, err)
+			os.Exit(1)
+		}
+
 		orderbookUpdater := orderbooks.NewOrderBookUpdater(&orderbooks.OrderBookUpdaterParams{
 			WriteToDB:          true,
-			OrderbookTableName: orderbooksTopic,
-			TradesTableName:    tradesTopic,
-			Brokers:            strings.Split(brokers, ","),
+			OrderbookTableName: "Orderbooks",
+			TradesTableName:    "Trades",
 			MarketDescriptor:   market,
+			ExchangeDescriptor: *exchange,
+			PairDescriptor:     pair,
 			StartTime:          startTime,
 			EndTime:            EndTime,
 			//SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
