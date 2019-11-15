@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/gocql/gocql"
 	"log"
-	"math"
 	"os"
 	"strings"
 	"sync"
@@ -218,9 +217,9 @@ func (sc *CassandraClient) Close() (err error) {
 
 func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.ExchangeDescr, pair rest.PairDescr, listeners []MarketUpdateCB, submitDeltasUpdateListeners chan<- callMarketUpdateListenersReq) {
 	defer close(submitDeltasUpdateListeners)
-	var ts time.Time
-	var price float32
-	var amount float32
+	var ts int64
+	var price string
+	var amount string
 
 	startTime := sc.params.StartTime.Add(time.Minute * -24)
 	date := startTime
@@ -242,26 +241,25 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
 			break
 		}
-		//fmt.Println(date, exchange.Name, pair.Symbol)
+		fmt.Println(date, exchange.Name, pair.Symbol)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
-                                WHERE exchange=? and pair=? and date = ? and ts > ? and ts < ? order by ts`, sc.params.OrderbookTableName),
+                                WHERE exchange=? and pair=? and date = ? and ts >= ? and ts < ? order by ts`, sc.params.OrderbookTableName),
 			exchange.ID,
 			pair.ID,
 			date.Format("2006-01-02"),
-			startTime,
-			sc.params.EndTime).Iter()
+			startTime.UnixNano(),
+			sc.params.EndTime.UnixNano()).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
-			if price == 0{
+			if price == "C"{
+				fmt.Println(ts, "checkpoint")
 				continue
 			}
-			if ts.Sub(startTime).Milliseconds()>=1{
-				if ts.Sub(startTime).Milliseconds()>=1000{
-					//fmt.Println(ts, ts.Sub(startTime).Milliseconds())
-				}
-				//fmt.Println(ts, update)
+			if ts-startTime.UnixNano()>=1{
+
+				//fmt.Println(time.Unix(0, ts))
 				if !update.Timestamp.IsZero(){
 					u := update
 					submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
@@ -283,7 +281,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 				}
 			}
 			orderBookDeltaUpdateFromCassandra(&update, ts, price, amount)
-			startTime = ts
+			startTime = time.Unix(0, ts)
 		}
 		if err := iter.Close(); err != nil{
 			fmt.Println(err, "retry from", startTime)
@@ -294,46 +292,36 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 	}
 }
 
-func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Time, price float32, amount float32) {
-
-	startTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:03:41.977")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000", "2019-10-31 20:04:00.977")
-
-	if ts.Before(EndTime)&&ts.After(startTime){
-		//fmt.Println(ts, price, amount)
-	}
-
-	if price==183.93{
-		//fmt.Println(ts, amount)
-	}
-	p := fmt.Sprintf("%.5g",  math.Abs(float64(price)))
-	a := fmt.Sprintf("%.5g", math.Abs(float64(amount)))
-	if amount > 0{
-		delta.Bids.Set = append(delta.Bids.Set, common.PublicOrder{
-			Price:  p,
-			Amount: a,
-		})
-	}else if amount < 0{
-		delta.Asks.Set = append(delta.Asks.Set, common.PublicOrder{
-			Price:  p,
-			Amount: a,
-		})
-	}else{
-		if price < 0{
-			delta.Asks.Remove = append(delta.Asks.Remove, p)
-
+func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts int64, price string, amount string) {
+	if strings.HasPrefix(price, "-"){
+		price = strings.TrimPrefix(price, "-")
+		amount = strings.TrimPrefix(amount, "-")
+		if amount == "0"{
+			delta.Asks.Remove = append(delta.Asks.Remove, price)
 		} else {
-			delta.Bids.Remove = append(delta.Bids.Remove, p)
+			delta.Asks.Set = append(delta.Asks.Set, common.PublicOrder{
+				Price:  price,
+				Amount: amount,
+			})
+		}
+	}else{
+		if amount == "0"{
+			delta.Bids.Remove = append(delta.Bids.Remove, price)
+		} else {
+			delta.Bids.Set = append(delta.Bids.Set, common.PublicOrder{
+				Price:  price,
+				Amount: amount,
+			})
 		}
 	}
-	delta.Timestamp=ts
+	delta.Timestamp=time.Unix(0, ts)
 }
 
 func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange rest.ExchangeDescr, pair rest.PairDescr, listeners []MarketUpdateCB, submitTradesUpdateListeners chan<- callMarketUpdateListenersReq) {
 	defer 	close(submitTradesUpdateListeners)
-	var ts time.Time
-	var price float32
-	var amount float32
+	var ts int64
+	var price string
+	var amount string
 
 	startTime := sc.params.StartTime
 	date := startTime
@@ -348,8 +336,8 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange rest.E
 			exchange.ID,
 			pair.ID,
 			date.Format("2006-01-02"),
-			startTime,
-			sc.params.EndTime).Iter()
+			startTime.UnixNano(),
+			sc.params.EndTime.UnixNano()).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
 			update := tradesUpdateFromCassandra(ts, price, amount)
@@ -358,7 +346,7 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange rest.E
 				update: common.MarketUpdate{TradesUpdate:&update},
 				listeners: listeners,
 			}
-			startTime = ts
+			startTime = time.Unix(0, ts)
 		}
 
 		if err := iter.Close(); err != nil{
@@ -371,14 +359,12 @@ func (sc *CassandraClient) queryCassandraTrades(marketId string, exchange rest.E
 
 }
 
-func tradesUpdateFromCassandra(ts time.Time, price float32, amount float32) common.TradesUpdate {
-	p := fmt.Sprintf("%.5g", price)
-	a := fmt.Sprintf("%.5g", amount)
+func tradesUpdateFromCassandra(ts int64, price string, amount string) common.TradesUpdate {
 	return common.TradesUpdate{
-		Timestamp:ts,
+		Timestamp:time.Unix(0, ts),
 		Trades:[]common.PublicTrade{{
-			Price:  p,
-			Amount: a,
+			Price:  price,
+			Amount: amount,
 		}},
 	}
 }

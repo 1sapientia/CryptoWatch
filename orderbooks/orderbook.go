@@ -90,15 +90,16 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 	if len( ob.snapshot.Asks)<=0{
 		//fmt.Println("wtf", obd.Timestamp)
+
 	}
+	//fmt.Println("wtf", obd.Timestamp)
 
 
 	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0{
 		ask, _ := strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64);
 		bid, _ := strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64);
-
 		if ask<bid{
-			fmt.Println(ob.snapshot.Bids[0].Price, ob.snapshot.Asks[0].Price , obd.Timestamp, len(deltaItems), ob.ExchangeDescriptor.Name, ob.PairDescriptor.Symbol)
+			fmt.Println(ob.snapshot.Bids[0].Price, ob.snapshot.Asks[0].Price , ob.marketDescriptor.Exchange, ob.marketDescriptor.Pair, obd.Timestamp, obd)
 		}
 	}
 

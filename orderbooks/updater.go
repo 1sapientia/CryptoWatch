@@ -540,10 +540,7 @@ func (obu *OrderBookUpdater) UpdateTimer(ts time.Time) {
 
 func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	defer obu.curOrderBook.clearSnapshotData()
-	if len( obu.curOrderBook.snapshot.Bids)<=0{
-		//fmt.Println(snapshotTime, "wtf")
-	}
-	return
+
 	if obu.curOrderBook.GetSeqNum() < 100 {
 		fmt.Println("skipping", obu.curOrderBook.GetSeqNum())
 		return
@@ -600,20 +597,20 @@ func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	bidsVolume10, asksVolume10 := availableVolumeRange(mid, 0.10)
 	bidsVolume1, asksVolume1 := availableVolumeRange(mid, 0.01)
 
-	if bidPrice>askPrice{
-		fmt.Println("taking snapshot", 							snapshotTime,
-			common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
-			common.FixPair(obu.params.MarketDescriptor.Pair),
-			tradeCount,
-			tradeVolume,
-			orderbookActivity,
-			bidsVolume10,
-			asksVolume10,
-			bidsVolume1,
-			asksVolume1,
-			bidPrice,
-			askPrice,)
-	}
+
+	fmt.Println("taking snapshot", 							snapshotTime,
+		common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
+		common.FixPair(obu.params.MarketDescriptor.Pair),
+		tradeCount,
+		tradeVolume,
+		orderbookActivity,
+		bidsVolume10,
+		asksVolume10,
+		bidsVolume1,
+		asksVolume1,
+		bidPrice,
+		askPrice,)
+
 
 
 	return
