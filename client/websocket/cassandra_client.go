@@ -254,6 +254,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 			sc.params.EndTime).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
+			//fmt.Println(date.Format("2006-01-02"),startTime, sc.params.EndTime,ts)
 			if price == 0{
 				update = common.OrderBookDelta{
 					Timestamp: ts,
@@ -313,7 +314,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		}
 		date = date.Add(time.Hour * 24)
 	}
-	fmt.Println("id:"+marketId, "cassandra done")
+	fmt.Println("id:"+marketId, "cassandra done", startTime)
 }
 
 func orderBookDeltaUpdateFromCassandra(delta *common.OrderBookDelta, ts time.Time, price float32, amount float32) {

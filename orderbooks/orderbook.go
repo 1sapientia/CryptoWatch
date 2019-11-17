@@ -189,6 +189,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 	}
 
 	if writer != nil {
+		//fmt.Println(obd.Timestamp)
 		writer.writeDelta(obd)
 	}
 

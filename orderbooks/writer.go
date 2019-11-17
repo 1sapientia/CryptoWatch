@@ -101,15 +101,10 @@ func (dbw *DatabaseWriter) writeTrades(tu common.TradesUpdate) {
 func (dbw *DatabaseWriter) submitItems(items []Item) {
 	dbw.writeQueue = append(dbw.writeQueue, items...)
 	queueLength := len(dbw.writeQueue)
-	if queueLength > 100 {
+	if queueLength >= 1 {
 		// dont block if chan is full. the queued requests will be processed later
-		select {
-		case dbw.writeChan <- dbw.writeQueue:
-			{
-				dbw.writeQueue = nil
-			}
-		default:
-		}
+		dbw.writeChan <- dbw.writeQueue
+		dbw.writeQueue = nil
 	}
 }
 
@@ -131,7 +126,7 @@ func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 			fmt.Println("put item throttled with error. retry pending", err)
 
 		} else {
-			fmt.Println(time.Unix(0, item.Timestamp))
+			fmt.Println(item.Timestamp, time.Unix(0, item.Timestamp).UTC())
 			return
 		}
 
