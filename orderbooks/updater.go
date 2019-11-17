@@ -598,6 +598,7 @@ func (obu *OrderBookUpdater) takeSnapshot(snapshotTime time.Time) {
 	bidsVolume1, asksVolume1 := availableVolumeRange(mid, 0.01)
 
 
+
 	fmt.Println("taking snapshot", 							snapshotTime,
 		common.FixExchangeName(obu.params.MarketDescriptor.Exchange),
 		common.FixPair(obu.params.MarketDescriptor.Pair),

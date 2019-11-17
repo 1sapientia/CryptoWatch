@@ -222,6 +222,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 	var amount string
 
 	startTime := sc.params.StartTime.Add(time.Minute * -24)
+
 	date := startTime
 
 	update := common.OrderBookDelta{
@@ -253,6 +254,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 			sc.params.EndTime.UnixNano()).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
+
 			if price == "C"{
 				update = common.OrderBookDelta{
 					Timestamp: time.Unix(0, ts),

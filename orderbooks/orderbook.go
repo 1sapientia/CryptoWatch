@@ -65,7 +65,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 	if obd.SeqNum==999999999{
 		ob.snapshot = common.OrderBookSnapshot{}
-		fmt.Println("checkpoint")
+		fmt.Println("checkpoint", obd.Timestamp)
 		return nil
 	}
 
