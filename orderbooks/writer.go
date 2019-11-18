@@ -35,7 +35,7 @@ type DatabaseWriter struct {
 
 func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, exchangeDescriptor *rest.ExchangeDescr, pairDescriptor *rest.PairDescr, orderbookTableName string, tradesTableName string) *DatabaseWriter {
 
-	cassandraCluster := gocql.NewCluster("127.0.0.1")
+	cassandraCluster := gocql.NewCluster("127.0.0.1:9043")
 	cassandraCluster.Keyspace = "orderbookretriever"
 	cassandraSession, err := cassandraCluster.CreateSession()
 	if err != nil {
@@ -102,7 +102,6 @@ func (dbw *DatabaseWriter) submitItems(items []Item) {
 	dbw.writeQueue = append(dbw.writeQueue, items...)
 	queueLength := len(dbw.writeQueue)
 	if queueLength >= 1 {
-		// dont block if chan is full. the queued requests will be processed later
 		dbw.writeChan <- dbw.writeQueue
 		dbw.writeQueue = nil
 	}
@@ -126,7 +125,7 @@ func (dbw *DatabaseWriter) writeWithExponentialBackoffCassandra(item Item) {
 			fmt.Println("put item throttled with error. retry pending", err)
 
 		} else {
-			fmt.Println(item.Timestamp, time.Unix(0, item.Timestamp).UTC())
+			//fmt.Println(item.Timestamp, time.Unix(0, item.Timestamp).UTC())
 			return
 		}
 

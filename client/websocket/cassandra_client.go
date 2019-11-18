@@ -243,7 +243,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange string
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
 			break
 		}
-		fmt.Println("id:"+marketId, date)
+		//fmt.Println("id:"+marketId, date)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
