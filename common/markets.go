@@ -82,6 +82,8 @@ type OrderBookSnapshot struct {
 	// See the SeqNum definition for more information.
 	SeqNum SeqNum
 
+	Timestamp time.Time
+
 	Bids []PublicOrder
 	Asks []PublicOrder
 }
