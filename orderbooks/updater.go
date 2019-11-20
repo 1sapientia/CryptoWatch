@@ -78,11 +78,11 @@ type OrderBookUpdater struct {
 
 // OrderBookUpdaterParams contains params for creating a new orderbook updater.
 type OrderBookUpdaterParams struct {
-	StartTime        time.Time
-	EndTime          time.Time
-	Brokers            []string
+	StartTime time.Time
+	EndTime   time.Time
+	Brokers   []string
 
-	PostgresDB    *sql.DB
+	PostgresDB *sql.DB
 
 	MarketDescriptor   rest.MarketDescr
 	ExchangeDescriptor rest.ExchangeDescr
@@ -99,6 +99,8 @@ type OrderBookUpdaterParams struct {
 	// the snapshot from the websocket (snapshot is delivered there every minute)
 	SnapshotGetter OrderBookSnapshotGetter
 
+	OrderbookSyncer OrderbookSyncer
+
 	// Below are mockables; should only be set for tests. By default, prod values
 	// will be used.
 
@@ -114,8 +116,7 @@ type OrderBookUpdaterParams struct {
 
 	// internalEvent is called right after processing an event in eventLoop.
 	// It's a no-op for prod.
-	internalEvent func(ie internalEvent)
-
+	internalEvent   func(ie internalEvent)
 }
 
 // NewOrderBookUpdater creates a new orderbook updater with the provided
@@ -469,6 +470,7 @@ func (obu *OrderBookUpdater) eventLoop() {
 		case delta := <-obu.deltasChan:
 			obu.UpdateTimer(delta.Timestamp)
 			_ = obu.curOrderBook.ApplyDeltaOpt(delta, true,  obu.curDatabaseWriter)
+			obu.params.OrderbookSyncer.C <- obu.curOrderBook.snapshot
 			obu.params.internalEvent(internalEventDeltaHandled)
 
 		case trades := <-obu.tradesChan:

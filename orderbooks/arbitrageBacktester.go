@@ -8,30 +8,23 @@ import (
 )
 
 type ArbitrageBacktester struct {
-	pair rest.PairDescr
-	exchanges map[string]OrderbookSyncer
+	Pair      rest.PairDescr
+	Queue     SyncerQueue
 }
 
+// GetNextTimestamp returns the timestamp of the next update to be added to the window
+func (ab *ArbitrageBacktester) Run()  {
 
-
-// Run synchronously merges data from different OrderbookSyncers and evaluates the arbitrage opportunities
-func (ab *ArbitrageBacktester) Run(){
-	for{
-		if len(ab.exchanges) == 0{
-			break
-		}
-	}
 }
-
 
 
 type OrderbookSyncer struct {
-	market rest.MarketDescr
-	feePercentage float64
-	opportunityDurationFilter time.Duration
+	Market rest.MarketDescr
+	FeePercentage float64
+	OpportunityDurationFilter time.Duration
 	chanOpen bool
 	windowUpdated bool
-	c chan common.OrderBookSnapshot
+	C chan common.OrderBookSnapshot
 	nextSnapshot common.OrderBookSnapshot
 	filteredSnapshot common.OrderBookSnapshot
 	activeSnapshots []*common.OrderBookSnapshot
@@ -46,11 +39,16 @@ func (ob *OrderbookSyncer) GetNextTimestamp() time.Time {
 	return time.Now()
 }
 
+// BlockForFirstSnapshot blocks until the first snasphot is recieved from the database via channel.
+func (ob *OrderbookSyncer) BlockForFirstSnapshot() {
+	ob.nextSnapshot, ob.chanOpen = <-ob.C
+}
+
 // ConsumeNextSnapshot adds next snapshot to the active snapshots and updates the NextSnapshot with next channel item.
 func (ob *OrderbookSyncer) ConsumeNextSnapshot() {
 	ob.activeSnapshots = append(ob.activeSnapshots, &ob.nextSnapshot)
 	ob.recalculateFilteredSnapshot()
-	ob.nextSnapshot, ob.chanOpen = <-ob.c
+	ob.nextSnapshot, ob.chanOpen = <-ob.C
 }
 
 // GetFilteredSnapshot updates the filteredSnapshot if necessary and returns it.
@@ -63,7 +61,7 @@ func (ob *OrderbookSyncer) GetFilteredSnapshot(ts time.Time) common.OrderBookSna
 func (ob *OrderbookSyncer) removeExpiredSnapshots(ts time.Time) {
 	var cutoffIndex int
 	for i, s := range ob.activeSnapshots{
-		if ts.Sub(s.Timestamp) < ob.opportunityDurationFilter{
+		if ts.Sub(s.Timestamp) < ob.OpportunityDurationFilter{
 			cutoffIndex = i
 		}
 	}
@@ -76,7 +74,7 @@ func (ob *OrderbookSyncer) removeExpiredSnapshots(ts time.Time) {
 // recalculateFilteredSnapshot calculates and saves current filtered snapshot from activeSnapshots
 // it should be called whenever active snapshots are changed (new added or old removed).
 func (ob *OrderbookSyncer) recalculateFilteredSnapshot() {
-
+	ob.filteredSnapshot = *ob.activeSnapshots[0]
 }
 
 

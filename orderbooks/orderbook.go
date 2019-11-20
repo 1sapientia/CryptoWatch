@@ -81,7 +81,6 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 	if len( ob.snapshot.Asks)<=0{
 		//fmt.Println("wtf", obd.Timestamp)
-
 	}
 	//fmt.Println("wtf", obd.Timestamp)
 
@@ -96,6 +95,7 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 	//ob.snapshot.SeqNum = obd.SeqNum
 	ob.snapshot.SeqNum += 1
+	ob.snapshot.Timestamp = obd.Timestamp
 
 	return nil
 }

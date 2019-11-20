@@ -89,6 +89,9 @@ func main() {
 	subscriptions := []*websocket.StreamSubscription{}
 	orderbookUpdaters := map[int64]*orderbooks.OrderBookUpdater{}
 
+	arbBacktesters := map[string]*orderbooks.ArbitrageBacktester{}
+
+
 	// generate subscriptions and orderBookUpdaters for every market
 	for _, market := range markets {
 
@@ -100,6 +103,14 @@ func main() {
 			os.Exit(1)
 		}
 
+		obs := orderbooks.OrderbookSyncer{
+			Market:                    market,
+			FeePercentage:             0,
+			OpportunityDurationFilter: time.Hour,
+			C:                         make(chan common.OrderBookSnapshot, 1000),
+		}
+		ab := arbBacktesters[pair.Symbol]
+		ab.Queue = append(ab.Queue, &obs)
 
 		subscriptions = append(subscriptions,
 			&websocket.StreamSubscription{
@@ -121,10 +132,11 @@ func main() {
 			Brokers:            strings.Split(brokers, ","),
 			MarketDescriptor:   market,
 			ExchangeDescriptor: *exchange,
-			PairDescriptor: pair,
+			PairDescriptor:     pair,
 			StartTime:          startTime,
 			EndTime:            EndTime,
 			PostgresDB: 		postgresDB,
+			OrderbookSyncer: 	obs,
 			//SnapshotGetter: orderbooks.NewOrderBookSnapshotGetterRESTBySymbol(
 			//	market.Exchange, market.Pair, &rest.CWRESTClientParams{
 			//		APIURL: cfg.APIURL,
@@ -138,7 +150,7 @@ func main() {
 
 	c, err = websocket.NewCassandraClient(&websocket.CassandraClientParams{
 		CassandraParams:    &websocket.CassandraParams{
-			URL:      "localhost:9043",
+			URL:      "localhost:9042",
 			Keyspace: "orderbookretriever",
 		},
 		Markets:            markets,
@@ -176,7 +188,6 @@ func main() {
 		},
 	)
 
-
 	// Listen for market changes.
 	c.OnMarketUpdate(
 		func(market common.Market, md common.MarketUpdate) {
@@ -192,13 +203,15 @@ func main() {
 		},
 	)
 
-	fmt.Print("[")
-
-
 	// Finally, connect.
 	if err := c.Connect(); err != nil {
 		log.Print(err)
 		os.Exit(1)
+	}
+
+	for _, v := range arbBacktesters {
+		fmt.Println("backtesting", v.Pair)
+		go v.Queue.RunBacktest()
 	}
 
 	signals := make(chan os.Signal, 1)
