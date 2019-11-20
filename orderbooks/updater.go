@@ -468,13 +468,16 @@ func (obu *OrderBookUpdater) eventLoop() {
 	for {
 		select {
 		case delta := <-obu.deltasChan:
-			obu.UpdateTimer(delta.Timestamp)
+			//obu.UpdateTimer(delta.Timestamp)
 			_ = obu.curOrderBook.ApplyDeltaOpt(delta, true,  obu.curDatabaseWriter)
+			if len(obu.curOrderBook.snapshot.Asks)==0 || len(obu.curOrderBook.snapshot.Bids)==0 {
+				break
+			}
 			obu.params.OrderbookSyncer.C <- obu.curOrderBook.snapshot
 			obu.params.internalEvent(internalEventDeltaHandled)
 
 		case trades := <-obu.tradesChan:
-			obu.UpdateTimer(trades.Timestamp)
+			//obu.UpdateTimer(trades.Timestamp)
 			obu.curOrderBook.ApplyTrades(trades, obu.curDatabaseWriter)
 			//obu.curDatabaseWriter.writeTrades(trades)
 			obu.params.internalEvent(internalEventTradeHandled)

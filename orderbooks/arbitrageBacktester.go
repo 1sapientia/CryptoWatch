@@ -3,6 +3,7 @@ package orderbooks
 import (
 	"code.cryptowat.ch/cw-sdk-go/client/rest"
 	"code.cryptowat.ch/cw-sdk-go/common"
+	"fmt"
 	"log"
 	"time"
 )
@@ -42,6 +43,7 @@ func (ob *OrderbookSyncer) GetNextTimestamp() time.Time {
 // BlockForFirstSnapshot blocks until the first snasphot is recieved from the database via channel.
 func (ob *OrderbookSyncer) BlockForFirstSnapshot() {
 	ob.nextSnapshot, ob.chanOpen = <-ob.C
+	fmt.Println("unblocked")
 }
 
 // ConsumeNextSnapshot adds next snapshot to the active snapshots and updates the NextSnapshot with next channel item.

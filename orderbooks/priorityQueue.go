@@ -36,9 +36,10 @@ func (pq *SyncerQueue) Pop() interface{} {
 // updateNext consumes the top priority OrderbookSyncer snapshot which updates its priority and changes its position in the priority queue
 // it returns the timestamp of the consumed snapshot which represents the current synced timestamp
 func (pq *SyncerQueue) updateNext() time.Time{
-	ts := (*pq)[pq.Len()-1].GetNextTimestamp()
-	(*pq)[pq.Len()-1].ConsumeNextSnapshot()
-	heap.Fix(pq, pq.Len()-1)
+	ts := (*pq)[0].GetNextTimestamp()
+	fmt.Println((*pq)[0].Market, ts)
+	(*pq)[0].ConsumeNextSnapshot()
+	heap.Fix(pq, 0)
 	return ts
 }
 
@@ -48,6 +49,7 @@ func (pq *SyncerQueue) RunBacktest() {
 		fmt.Println("blocking for ", syncer.Market)
 		syncer.BlockForFirstSnapshot()
 	}
+	heap.Init(pq)
 	for{
 		if pq.Len() == 0{
 			fmt.Println("backtest done")
@@ -61,7 +63,8 @@ func (pq *SyncerQueue) RunBacktest() {
 // evaluateOpportunities for now only prints out the filtered snapshots
 func (pq *SyncerQueue) evaluateOpportunities(ts time.Time) {
 	for _, syncer := range *pq{
-		fmt.Println(syncer.Market, syncer.GetFilteredSnapshot(ts))
+		continue
+		fmt.Println(syncer.Market, syncer.GetNextTimestamp())
 	}
 }
 
