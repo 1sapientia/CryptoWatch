@@ -5,6 +5,7 @@ import (
 	"code.cryptowat.ch/cw-sdk-go/common"
 	"fmt"
 	"log"
+	"math"
 	"time"
 )
 
@@ -48,7 +49,8 @@ func (ob *OrderbookSyncer) BlockForFirstSnapshot() {
 
 // ConsumeNextSnapshot adds next snapshot to the active snapshots and updates the NextSnapshot with next channel item.
 func (ob *OrderbookSyncer) ConsumeNextSnapshot() {
-	ob.activeSnapshots = append(ob.activeSnapshots, &ob.nextSnapshot)
+	tmp := ob.nextSnapshot
+	ob.activeSnapshots = append(ob.activeSnapshots, &tmp)
 	ob.recalculateFilteredSnapshot()
 	ob.nextSnapshot, ob.chanOpen = <-ob.C
 }
@@ -65,6 +67,7 @@ func (ob *OrderbookSyncer) removeExpiredSnapshots(ts time.Time) {
 	for i, s := range ob.activeSnapshots{
 		if ts.Sub(s.Timestamp) < ob.OpportunityDurationFilter{
 			cutoffIndex = i
+			break
 		}
 	}
 	if cutoffIndex>0{
@@ -76,7 +79,26 @@ func (ob *OrderbookSyncer) removeExpiredSnapshots(ts time.Time) {
 // recalculateFilteredSnapshot calculates and saves current filtered snapshot from activeSnapshots
 // it should be called whenever active snapshots are changed (new added or old removed).
 func (ob *OrderbookSyncer) recalculateFilteredSnapshot() {
-	ob.filteredSnapshot = *ob.activeSnapshots[0]
+	maxAsk := 0.0
+	minBid := math.MaxFloat64
+	maxAskIndex := 0
+	minBidIndex := 0
+	for i, s := range ob.activeSnapshots{
+		if s.Bid<minBid{
+			minBid = s.Bid
+			minBidIndex = i
+		}
+		if s.Ask>maxAsk{
+			maxAsk = s.Ask
+			maxAskIndex = i
+		}
+	}
+	ob.filteredSnapshot.Asks = ob.activeSnapshots[maxAskIndex].Asks
+	ob.filteredSnapshot.Ask = ob.activeSnapshots[maxAskIndex].Ask
+
+	ob.filteredSnapshot.Bids = ob.activeSnapshots[minBidIndex].Bids
+	ob.filteredSnapshot.Bid = ob.activeSnapshots[minBidIndex].Bid
+
 }
 
 

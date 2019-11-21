@@ -86,6 +86,8 @@ type OrderBookSnapshot struct {
 
 	Bids []PublicOrder
 	Asks []PublicOrder
+	Ask                float64
+	Bid                float64
 }
 
 // CassandraDelta represents a single order book delta event extracted from cassandra database

@@ -3,6 +3,7 @@ package orderbooks
 import (
 	"container/heap"
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -37,7 +38,9 @@ func (pq *SyncerQueue) Pop() interface{} {
 // it returns the timestamp of the consumed snapshot which represents the current synced timestamp
 func (pq *SyncerQueue) updateNext() time.Time{
 	ts := (*pq)[0].GetNextTimestamp()
-	fmt.Println((*pq)[0].Market, ts)
+
+	//fmt.Println((*pq)[0].Market, ts)
+
 	(*pq)[0].ConsumeNextSnapshot()
 	heap.Fix(pq, 0)
 	return ts
@@ -62,9 +65,14 @@ func (pq *SyncerQueue) RunBacktest() {
 
 // evaluateOpportunities for now only prints out the filtered snapshots
 func (pq *SyncerQueue) evaluateOpportunities(ts time.Time) {
+	maxBid := 0.0
+	minAsk := math.MaxFloat64
 	for _, syncer := range *pq{
-		continue
-		fmt.Println(syncer.Market, syncer.GetNextTimestamp())
+		maxBid = math.Max(maxBid, syncer.GetFilteredSnapshot(ts).Bid)
+		minAsk = math.Min(minAsk, syncer.GetFilteredSnapshot(ts).Ask)
+	}
+	if(maxBid>minAsk){
+		fmt.Println(maxBid, minAsk, 100*(maxBid/minAsk-1))
 	}
 }
 

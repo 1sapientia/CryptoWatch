@@ -28,6 +28,7 @@ type OrderBook struct {
 	lastCheckpoint     time.Time
 	ExchangeDescriptor rest.ExchangeDescr
 	PairDescriptor     rest.PairDescr
+
 }
 
 func NewOrderBook(snapshot common.OrderBookSnapshot) *OrderBook {
@@ -86,9 +87,9 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 
 
 	if len( ob.snapshot.Asks)>0 && len(ob.snapshot.Bids)>0{
-		ask, _ := strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64);
-		bid, _ := strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64);
-		if ask<bid{
+		ob.snapshot.Ask, _ = strconv.ParseFloat(ob.snapshot.Asks[0].Price, 64);
+		ob.snapshot.Bid, _ = strconv.ParseFloat(ob.snapshot.Bids[0].Price, 64);
+		if ob.snapshot.Ask<ob.snapshot.Bid{
 			fmt.Println(ob.snapshot.Bids[0].Price, ob.snapshot.Asks[0].Price , ob.marketDescriptor.Exchange, ob.marketDescriptor.Pair, obd.Timestamp, obd)
 		}
 	}

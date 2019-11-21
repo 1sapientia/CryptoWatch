@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/gocql/gocql"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +27,6 @@ type CassandraClient struct {
 
 	marketUpdateListeners []MarketUpdateCB
 
-	callMarketUpdateListeners chan callMarketUpdateListenersReq
 
 	mtx    sync.Mutex
 	waitgroup sync.WaitGroup
@@ -78,26 +76,11 @@ func NewCassandraClient(params *CassandraClientParams) (*CassandraClient, error)
 	sc := &CassandraClient{
 		params:                    params,
 		cassandraSession:          cassandraSession,
-		callMarketUpdateListeners: make(chan callMarketUpdateListenersReq, 1),
-
 	}
-
-	go sc.listen()
 
 	return sc, nil
 }
 
-// listen is used internally to dispatch data to registered listeners.
-func (sc *CassandraClient) listen() {
-	for {
-		select {
-		case req := <-sc.callMarketUpdateListeners:
-			for _, l := range req.listeners {
-				l(req.market, req.update)
-			}
-		}
-	}
-}
 
 // listen is used internally to dispatch data to registered listeners.
 func (sc *CassandraClient) merge(submitTradesUpdateListeners <-chan callMarketUpdateListenersReq, submitDeltasUpdateListeners <-chan callMarketUpdateListenersReq) {
@@ -125,10 +108,10 @@ func (sc *CassandraClient) merge(submitTradesUpdateListeners <-chan callMarketUp
 		}
 
 		if tradeUpdate == nil || (deltaUpdate!=nil && deltaUpdate.update.OrderBookDelta.Timestamp.Before(tradeUpdate.update.TradesUpdate.Timestamp)){
-			sc.callMarketUpdateListeners <- *deltaUpdate
+			sc.callMarketUpdateListeners(*deltaUpdate)
 			deltaUpdate = nil
 		} else {
-			sc.callMarketUpdateListeners <- *tradeUpdate
+			sc.callMarketUpdateListeners(*tradeUpdate)
 			tradeUpdate = nil
 		}
 	}
@@ -200,9 +183,9 @@ func (sc *CassandraClient) Connect() (err error) {
 	go func() {
 		sc.waitgroup.Wait()
 		_ = sc.Close()
-		//log.Print("Cassandra Querying Done")
-		fmt.Print("]")
-		os.Exit(0)
+		log.Print("Cassandra Querying Done")
+		//fmt.Print("]")
+		//os.Exit(0)
 	}()
 
 	return nil
@@ -242,7 +225,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 		if 0 > sc.params.EndTime.Sub(date).Hours()/24{
 			break
 		}
-		fmt.Println(date, exchange.Name, pair.Symbol)
+		//fmt.Println(date, exchange.Name, pair.Symbol)
 		iter := sc.cassandraSession.Query(
 			fmt.Sprintf(`SELECT ts, price, amount 
                                 FROM %s 
@@ -254,7 +237,6 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 			sc.params.EndTime.UnixNano()).Iter()
 
 		for iter.Scan(&ts, &price, &amount) {
-
 			if price == "C"{
 				update = common.OrderBookDelta{
 					Timestamp: time.Unix(0, ts),
@@ -283,6 +265,7 @@ func (sc *CassandraClient) queryCassandraDeltas(marketId string, exchange rest.E
 
 				//fmt.Println(time.Unix(0, ts))
 				if !update.Timestamp.IsZero(){
+					//fmt.Println(exchange,  time.Unix(0, ts))
 					u := update
 					submitDeltasUpdateListeners <- callMarketUpdateListenersReq{
 						market: common.Market{ID: common.MarketID(marketId)},
@@ -402,5 +385,11 @@ func (sc *CassandraClient) parseSubscription(subscription *StreamSubscription) (
 
 	return stream, subscriptionParts[1], exchange, pair
 
+}
+
+func (sc *CassandraClient) callMarketUpdateListeners(req callMarketUpdateListenersReq) {
+	for _, l := range req.listeners {
+		l(req.market, req.update)
+	}
 }
 
