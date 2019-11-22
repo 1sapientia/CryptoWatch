@@ -25,7 +25,7 @@ func main() {
 
 	time.Local = time.UTC
 	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-15 00:00:00.000")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000",     "2019-11-14 19:29:00.000")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000",     "2019-11-15 00:00:00.000")
 
 	if err != nil {
 		log.Print(err)
