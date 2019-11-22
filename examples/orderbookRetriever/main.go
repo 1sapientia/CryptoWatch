@@ -106,7 +106,7 @@ func main() {
 		obs := orderbooks.OrderbookSyncer{
 			Market:                    market,
 			FeePercentage:             0,
-			OpportunityDurationFilter: time.Minute*1,
+			OpportunityDurationFilter: time.Second*10,
 			C:                         make(chan common.OrderBookSnapshot, 1),
 		}
 

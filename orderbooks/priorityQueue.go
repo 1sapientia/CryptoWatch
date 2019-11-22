@@ -1,9 +1,12 @@
 package orderbooks
 
 import (
+	"code.cryptowat.ch/cw-sdk-go/common"
 	"container/heap"
 	"fmt"
 	"math"
+	"sort"
+	"strconv"
 	"time"
 )
 
@@ -71,8 +74,35 @@ func (pq *SyncerQueue) evaluateOpportunities(ts time.Time) {
 		maxBid = math.Max(maxBid, syncer.GetFilteredSnapshot(ts).Bid)
 		minAsk = math.Min(minAsk, syncer.GetFilteredSnapshot(ts).Ask)
 	}
-	if(maxBid>minAsk){
-		fmt.Println(maxBid, minAsk, 100*(maxBid/minAsk-1))
+	if(maxBid > minAsk && 100*(maxBid/minAsk-1)>0.2){
+		fmt.Println("l0l", ts)
+		overlapping := common.OrderBookSnapshot{
+			Timestamp: ts,
+			Bids:      []common.PublicOrder{},
+			Asks:      []common.PublicOrder{},
+			Bid:       maxBid,
+			Ask:	   minAsk,
+		}
+		for _, syncer := range *pq{
+			for _, order := range syncer.GetFilteredSnapshot(ts).Bids{
+				p, _ := strconv.ParseFloat(order.Price, 64)
+				if p < minAsk{
+					break
+				}
+				overlapping.Bids = append(overlapping.Bids, order)
+			}
+			for _, order := range syncer.GetFilteredSnapshot(ts).Asks{
+				p, _ := strconv.ParseFloat(order.Price, 64)
+				if p > maxBid{
+					break
+				}
+				overlapping.Asks = append(overlapping.Asks, order)
+			}
+		}
+		sort.Sort(common.PublicOrdersByPrice(overlapping.Asks))
+		sort.Sort(sort.Reverse(common.PublicOrdersByPrice(overlapping.Bids)))
+		fmt.Println("lel", ts)
+		fmt.Println(overlapping)
 	}
 }
 
