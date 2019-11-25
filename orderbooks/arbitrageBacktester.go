@@ -44,6 +44,7 @@ func (ob *OrderbookSyncer) GetNextTimestamp() time.Time {
 // BlockForFirstSnapshot blocks until the first snasphot is recieved from the database via channel.
 func (ob *OrderbookSyncer) BlockForFirstSnapshot() {
 	ob.nextSnapshot, ob.chanOpen = <-ob.C
+	ob.recalculateFilteredSnapshot()
 	fmt.Println("unblocked")
 }
 
@@ -81,9 +82,12 @@ func (ob *OrderbookSyncer) removeExpiredSnapshots(ts time.Time) {
 func (ob *OrderbookSyncer) recalculateFilteredSnapshot() {
 	maxAsk := 0.0
 	minBid := math.MaxFloat64
-	maxAskIndex := 0
-	minBidIndex := 0
+	maxAskIndex := -1
+	minBidIndex := -1
 	for i, s := range ob.activeSnapshots{
+		if len(s.Bids)<=0 || len(s.Asks)<=0{
+			continue
+		}
 		if s.Bid<minBid{
 			minBid = s.Bid
 			minBidIndex = i
@@ -93,12 +97,19 @@ func (ob *OrderbookSyncer) recalculateFilteredSnapshot() {
 			maxAskIndex = i
 		}
 	}
-	ob.filteredSnapshot.Asks = ob.activeSnapshots[maxAskIndex].Asks
-	ob.filteredSnapshot.Ask = ob.activeSnapshots[maxAskIndex].Ask
+	if maxAskIndex==-1 || minBidIndex==-1{
+		ob.filteredSnapshot.Asks = nil
+		ob.filteredSnapshot.Ask = math.MaxFloat64
 
-	ob.filteredSnapshot.Bids = ob.activeSnapshots[minBidIndex].Bids
-	ob.filteredSnapshot.Bid = ob.activeSnapshots[minBidIndex].Bid
+		ob.filteredSnapshot.Bids = nil
+		ob.filteredSnapshot.Bid = 0.0
+	}else{
+		ob.filteredSnapshot.Asks = ob.activeSnapshots[maxAskIndex].Asks
+		ob.filteredSnapshot.Ask = ob.activeSnapshots[maxAskIndex].Ask
 
+		ob.filteredSnapshot.Bids = ob.activeSnapshots[minBidIndex].Bids
+		ob.filteredSnapshot.Bid = ob.activeSnapshots[minBidIndex].Bid
+	}
 }
 
 

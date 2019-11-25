@@ -64,6 +64,7 @@ type Market struct {
 // PublicOrder represents a public order placed on an exchange. They often come
 // as a slice of PublicOrder, which come with order book updates.
 type PublicOrder struct {
+	Exchange  string
 	Price  string
 	Amount string
 }

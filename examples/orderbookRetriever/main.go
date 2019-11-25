@@ -27,8 +27,8 @@ func main() {
 
 	time.Local = time.UTC
 
-	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-19 00:00:00.000")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000",     "2019-10-20 00:00:00.000")
+	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-20 00:00:00.000")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000",     "2019-11-13 00:00:00.000")
 
 	if err != nil {
 		log.Print(err)
@@ -106,7 +106,7 @@ func main() {
 		obs := orderbooks.OrderbookSyncer{
 			Market:                    market,
 			FeePercentage:             0,
-			OpportunityDurationFilter: time.Second*10,
+			OpportunityDurationFilter: time.Second*5,
 			C:                         make(chan common.OrderBookSnapshot, 1),
 		}
 
@@ -158,7 +158,7 @@ func main() {
 
 	c, err = websocket.NewCassandraClient(&websocket.CassandraClientParams{
 		CassandraParams:    &websocket.CassandraParams{
-			URL:      "localhost:9042",
+			URL:      "localhost:9043",
 			Keyspace: "orderbookretriever",
 		},
 		Markets:            markets,
@@ -219,7 +219,7 @@ func main() {
 
 	for _, v := range arbBacktesters {
 		fmt.Println("backtesting", v.Pair.Symbol)
-		go v.Queue.RunBacktest()
+		go v.Queue.RunBacktest(v.Pair.Symbol)
 	}
 
 	signals := make(chan os.Signal, 1)
