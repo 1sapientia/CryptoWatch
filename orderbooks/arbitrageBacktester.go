@@ -14,12 +14,6 @@ type ArbitrageBacktester struct {
 	Queue     SyncerQueue
 }
 
-// GetNextTimestamp returns the timestamp of the next update to be added to the window
-func (ab *ArbitrageBacktester) Run()  {
-
-}
-
-
 type OrderbookSyncer struct {
 	Market rest.MarketDescr
 	FeePercentage float64
@@ -29,7 +23,7 @@ type OrderbookSyncer struct {
 	C chan common.OrderBookSnapshot
 	nextSnapshot common.OrderBookSnapshot
 	filteredSnapshot common.OrderBookSnapshot
-	activeSnapshots []*common.OrderBookSnapshot
+	activeSnapshots []common.OrderBookSnapshot
 }
 
 // GetNextTimestamp returns the timestamp of the next update to be added to the window
@@ -50,8 +44,7 @@ func (ob *OrderbookSyncer) BlockForFirstSnapshot() {
 
 // ConsumeNextSnapshot adds next snapshot to the active snapshots and updates the NextSnapshot with next channel item.
 func (ob *OrderbookSyncer) ConsumeNextSnapshot() {
-	tmp := ob.nextSnapshot
-	ob.activeSnapshots = append(ob.activeSnapshots, &tmp)
+	ob.activeSnapshots = append(ob.activeSnapshots, ob.nextSnapshot)
 	ob.recalculateFilteredSnapshot()
 	ob.nextSnapshot, ob.chanOpen = <-ob.C
 }

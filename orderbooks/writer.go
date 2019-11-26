@@ -41,7 +41,7 @@ func NewDatabaseWriter(marketDescriptor *rest.MarketDescr, exchangeDescriptor *r
 	cassandraCluster.Keyspace = "orderbookretriever"
 	cassandraSession, err := cassandraCluster.CreateSession()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 
 	dbw := &DatabaseWriter{

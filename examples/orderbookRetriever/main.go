@@ -28,7 +28,7 @@ func main() {
 	time.Local = time.UTC
 
 	startTime, err := time.Parse("2006-01-02 15:04:05.000", "2019-10-20 00:00:00.000")
-	EndTime, _ := time.Parse("2006-01-02 15:04:05.000",     "2019-11-13 00:00:00.000")
+	EndTime, _ := time.Parse("2006-01-02 15:04:05.000",     "2019-11-14 00:00:00.000")
 
 	if err != nil {
 		log.Print(err)
@@ -106,8 +106,8 @@ func main() {
 		obs := orderbooks.OrderbookSyncer{
 			Market:                    market,
 			FeePercentage:             0,
-			OpportunityDurationFilter: time.Second*5,
-			C:                         make(chan common.OrderBookSnapshot, 1),
+			OpportunityDurationFilter: time.Second*2,
+			C:                         make(chan common.OrderBookSnapshot, 1000),
 		}
 
 		ab := arbBacktesters[pair.Symbol]

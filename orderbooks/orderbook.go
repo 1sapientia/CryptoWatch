@@ -69,9 +69,9 @@ func (ob *OrderBook) ApplyDeltaOpt(obd common.OrderBookDelta, ignoreSeqNum bool,
 		return nil
 	}
 
-	deltaItems := writer.extractDeltas(obd)
+	//deltaItems := writer.extractDeltas(obd)
 
-	ob.intervalDeltas = append(ob.intervalDeltas, deltaItems...)
+	//ob.intervalDeltas = append(ob.intervalDeltas, deltaItems...)
 
 	if writer.WriteToDB{
 		writer.writeDelta(obd)
@@ -186,6 +186,7 @@ func ordersWithDelta(
 
 
 func (ob *OrderBook) ApplyTrades(update common.TradesUpdate, writer *DatabaseWriter) {
+	return
 	trades := writer.extractTrades(update)
 	ob.intervalTrades = append(ob.intervalTrades, trades...)
 }

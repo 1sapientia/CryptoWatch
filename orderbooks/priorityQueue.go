@@ -70,6 +70,11 @@ func (pq *SyncerQueue) RunBacktest(symbol string) {
 		Bid:       maxBid,
 		Ask:	   minAsk,
 	}
+	if len(*pq)<2{
+		fmt.Println("too few exchanges for pair", symbol)
+		return
+	}
+	fmt.Println(len(*pq), " exchanges for pair", symbol)
 	for _, syncer := range *pq{
 		fmt.Println("blocking for ", syncer.Market)
 		syncer.BlockForFirstSnapshot()
